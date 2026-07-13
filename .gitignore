@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.env
+venv/
+.venv/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Model artifacts (include in repo for hackathon demo)
+# model/artifacts/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Environment
+.env.local
+.env.production
