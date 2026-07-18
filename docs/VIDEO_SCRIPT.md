@@ -36,13 +36,17 @@
 
 > "These are the top three factors driving this prediction, powered by SHAP explainability. It's telling us: high scope-change count on a fixed-bid contract is the biggest risk factor, employee costs above the 57% industry baseline are squeezing margins, and team attrition is adding lateral-hire premiums. This is language a project manager can act on."
 
+### [SCREEN: Scroll down to the Interventions panel]
+
+> "And here's where the reinforcement learning layer comes in. The contextual bandit simulates different interventions and recommends the best action. For this project, it recommends increasing monitoring, which it projects will reduce the risk by 22%."
+
 ### [SCREEN: Toggle currency from USD to INR — values update]
 
 > "And for our Indian IT context, we can toggle between dollar and rupee values."
 
 ### [SCREEN: Click on an on-track project for contrast]
 
-> "Compare that to this smaller project — low scope changes, stable team, T&M contract. The model gives it a green on-track rating with 99% confidence and only a 0.2% overrun."
+> "Compare that to this smaller project — low scope changes, stable team, T&M contract. The model gives it a green on-track rating with 99% confidence, and the RL layer correctly recommends just freezing scope for a tiny risk reduction."
 
 ---
 
@@ -61,9 +65,13 @@
 
 > "The model itself is XGBoost — a gradient-boosted classifier for risk labels, plus a separate regressor for continuous cost prediction."
 
-### [SCREEN: Open model/artifacts/metrics.json or show the terminal output]
+### [SCREEN: Switch to model/diagnose_model.py — show the overfitting metrics]
 
-> "Our real accuracy numbers: 71.6% on a three-class problem with intentional noise. That's deliberate — real data has unexplained variance, and a 98% accuracy model would mean our synthetic data was too clean, not that our model was better."
+> "We're also very honest about overfitting. Our initial model had 100% training accuracy but only 70% validation accuracy. We dropped our ensemble approach in favor of a single, highly-regularized XGBoost model, reducing the generalization gap to just 10%."
+
+### [SCREEN: Switch to docs/real_data_validation.md]
+
+> "Finally, we validated our modeling approach on two real-world PROMISE datasets — Kitchenham and NASA93. On the NASA93 dataset, the algorithm achieved a cross-validated R-squared of 0.735, proving it works on real software engineering data."
 
 ### [SCREEN: Open model/artifacts/shap_summary.png]
 

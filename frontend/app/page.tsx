@@ -12,6 +12,13 @@ interface ShapFactor {
   description: string;
 }
 
+interface Recommendation {
+  action: string;
+  description: string;
+  expected_risk_reduction: number;
+  confidence: number;
+}
+
 interface PredictionResult {
   risk_class: string;
   risk_confidence: number;
@@ -23,6 +30,7 @@ interface PredictionResult {
   overrun_percentage: number;
   top_factors: ShapFactor[];
   class_probabilities: Record<string, number>;
+  recommendations: Recommendation[];
 }
 
 interface SampleProject {
@@ -599,6 +607,33 @@ export default function DeltaDashboard() {
                     </div>
                   ))}
                 </div>
+
+                {/* RL Recommendations Panel */}
+                {result.recommendations && result.recommendations.length > 0 && (
+                  <div className="panel glass full-panel">
+                    <div className="panel-header">
+                      <div className="panel-icon glass" style={{ background: "rgba(34, 197, 94, 0.15)" }}>
+                        💡
+                      </div>
+                      <div className="panel-title">Recommended Interventions (RL Agent)</div>
+                    </div>
+                    {result.recommendations.map((rec, i) => (
+                      <div className="factor-card" key={i} style={{ borderLeft: "3px solid #22C55E" }}>
+                        <div className="factor-header">
+                          <span className="factor-name" style={{ color: "#4ADE80" }}>
+                            {rec.action}
+                          </span>
+                          <span className="factor-impact reduces_risk">
+                            {rec.expected_risk_reduction > 0
+                              ? `↓ ${(rec.expected_risk_reduction * 100).toFixed(1)}% risk`
+                              : "Maintain"}
+                          </span>
+                        </div>
+                        <div className="factor-description">{rec.description}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}

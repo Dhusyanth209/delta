@@ -1,0 +1,20 @@
+{
+  "classifier": {
+    "training_accuracy": 1.0,
+    "validation_accuracy": 0.6989473684210527,
+    "generalization_gap": 0.30105263157894735,
+    "cv_mean_accuracy": 0.7157894736842105,
+    "cv_std": 0.03295258072104954,
+    "optimal_max_depth": 2,
+    "optimal_n_estimators": 300
+  },
+  "regressor": {
+    "test_r2": 0.7568978073996444,
+    "test_mae": 0.04699736249955664
+  },
+  "diagnosis": {
+    "classifier_fit": "OVERFITTING",
+    "classifier_recommendation": "Reduce max_depth, increase min_child_weight, add regularization (reg_alpha, reg_lambda), or collect more data. Consider feature selection.",
+    "regressor_fit": "ACCEPTABLE"
+  }
+}

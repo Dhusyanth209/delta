@@ -1,0 +1,82 @@
+{
+  "alpha": [
+    [
+      1.0,
+      51.0,
+      1.0,
+      3.0,
+      13.0,
+      9.0
+    ],
+    [
+      1.0,
+      21.0,
+      1.0,
+      7.0,
+      1.0,
+      4.0
+    ],
+    [
+      1.0,
+      26.0,
+      5.0,
+      1.0,
+      2.0,
+      190.0
+    ]
+  ],
+  "beta": [
+    [
+      4.0,
+      25.0,
+      4.0,
+      6.0,
+      12.0,
+      11.0
+    ],
+    [
+      3.0,
+      5.0,
+      2.0,
+      4.0,
+      1.0,
+      3.0
+    ],
+    [
+      5.0,
+      19.0,
+      9.0,
+      7.0,
+      4.0,
+      74.0
+    ]
+  ],
+  "n_actions": 6,
+  "n_contexts": 3,
+  "actions": {
+    "0": {
+      "name": "No Change",
+      "description": "Maintain current project trajectory"
+    },
+    "1": {
+      "name": "Freeze Scope",
+      "description": "Stop accepting new scope changes"
+    },
+    "2": {
+      "name": "Add Senior Staff",
+      "description": "Increase senior developer ratio by 15%"
+    },
+    "3": {
+      "name": "Right-Size Team",
+      "description": "Adjust team size to match budget capacity"
+    },
+    "4": {
+      "name": "Switch to T&M",
+      "description": "Negotiate contract change to time-and-material"
+    },
+    "5": {
+      "name": "Increase Monitoring",
+      "description": "Reduce burn-rate variance with weekly reviews"
+    }
+  }
+}
