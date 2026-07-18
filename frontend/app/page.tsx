@@ -255,6 +255,78 @@ export default function DeltaDashboard() {
             Predict cost overruns and delivery risk for IT projects using ML-powered analysis
           </p>
 
+          {/* Problem Statement & Solution Block */}
+          <div className="glass" style={{
+            padding: "20px",
+            borderRadius: "var(--radius-md)",
+            marginBottom: "20px",
+            background: "rgba(255, 255, 255, 0.015)"
+          }}>
+            <p style={{
+              fontSize: "13.5px",
+              color: "var(--text-primary)",
+              lineHeight: "1.6",
+              marginBottom: "8px",
+              fontWeight: 500
+            }}>
+              ⚠️ <strong>Problem:</strong> IT services firms lose significant margin every year to project cost overruns and delivery delays caught too late to prevent.
+            </p>
+            <p style={{
+              fontSize: "13.5px",
+              color: "var(--text-secondary)",
+              lineHeight: "1.6",
+              fontWeight: 400
+            }}>
+              ✅ <strong>Solution:</strong> Delta predicts risk 4–8 weeks ahead using ML trained on patterns calibrated against published industry research, providing explainable, plain-language reasoning and reinforcement learning recommendations for every prediction.
+            </p>
+          </div>
+
+          {/* Real Metrics Strip */}
+          <div style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "10px",
+            marginBottom: "24px",
+            alignItems: "center"
+          }}>
+            <div className="glass" style={{
+              padding: "6px 12px",
+              borderRadius: "20px",
+              fontSize: "11px",
+              color: "var(--text-secondary)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px"
+            }}>
+              <span style={{ color: "#2E5CFF", fontWeight: "bold" }}>●</span>
+              <span>Classifier Accuracy: <strong>75.5% (5-Fold CV)</strong></span>
+            </div>
+            <div className="glass" style={{
+              padding: "6px 12px",
+              borderRadius: "20px",
+              fontSize: "11px",
+              color: "var(--text-secondary)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px"
+            }}>
+              <span style={{ color: "#22C55E", fontWeight: "bold" }}>●</span>
+              <span>NASA93 Validation: <strong>R² = 0.735</strong></span>
+            </div>
+            <div className="glass" style={{
+              padding: "6px 12px",
+              borderRadius: "20px",
+              fontSize: "11px",
+              color: "var(--text-secondary)",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px"
+            }}>
+              <span style={{ color: "#7B3FE4", fontWeight: "bold" }}>●</span>
+              <span>Industry Baseline ECR: <strong>57% - 60%</strong></span>
+            </div>
+          </div>
+
           {/* Action Buttons */}
           <div className="actions-row">
             <button
@@ -625,7 +697,12 @@ export default function DeltaDashboard() {
                       <div className="panel-icon glass" style={{ background: "rgba(34, 197, 94, 0.15)" }}>
                         💡
                       </div>
-                      <div className="panel-title">Recommended Interventions (RL Agent)</div>
+                      <div>
+                        <div className="panel-title">Recommended Interventions (RL Agent)</div>
+                        <div style={{ fontSize: "10.5px", color: "var(--text-muted)", marginTop: "2px", fontWeight: "normal" }}>
+                          Estimated via simulated counterfactual analysis, not observed real-world outcomes.
+                        </div>
+                      </div>
                     </div>
                     {result.recommendations.map((rec, i) => (
                       <div className="factor-card" key={i} style={{ borderLeft: "3px solid #22C55E" }}>
@@ -678,10 +755,17 @@ export default function DeltaDashboard() {
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
+          flexWrap: "wrap",
+          gap: "12px",
           fontSize: 11,
           color: "var(--text-muted)",
         }}>
           <span>DELTA — Project Cost-Overrun & Delivery-Risk Prediction</span>
+          <div style={{ display: "flex", gap: 16 }}>
+            <a href="https://github.com/Dhusyanth209/delta" target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-muted)", textDecoration: "none", transition: "color 0.2s" }} onMouseOver={e => e.currentTarget.style.color = "var(--text-primary)"} onMouseOut={e => e.currentTarget.style.color = "var(--text-muted)"}>GitHub Repo</a>
+            <a href="https://github.com/Dhusyanth209/delta/blob/main/docs/README.md" target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-muted)", textDecoration: "none", transition: "color 0.2s" }} onMouseOver={e => e.currentTarget.style.color = "var(--text-primary)"} onMouseOut={e => e.currentTarget.style.color = "var(--text-muted)"}>Documentation</a>
+            <a href="https://github.com/Dhusyanth209/delta/blob/main/docs/VIDEO_SCRIPT.md" target="_blank" rel="noopener noreferrer" style={{ color: "var(--text-muted)", textDecoration: "none", transition: "color 0.2s" }} onMouseOver={e => e.currentTarget.style.color = "var(--text-primary)"} onMouseOut={e => e.currentTarget.style.color = "var(--text-muted)"}>Demo Video</a>
+          </div>
           <span>Hackathon Submission · Open Innovation Track</span>
         </div>
       </footer>
