@@ -131,10 +131,20 @@ export default function DeltaDashboard() {
     setLoading(true);
     setError(null);
     try {
+      // Normalize values if entered as raw percentages (> 1.0)
+      const payload = {
+        ...form,
+        seniority_mix_junior: form.seniority_mix_junior > 1.0 ? form.seniority_mix_junior / 100.0 : form.seniority_mix_junior,
+        seniority_mix_mid: form.seniority_mix_mid > 1.0 ? form.seniority_mix_mid / 100.0 : form.seniority_mix_mid,
+        seniority_mix_senior: form.seniority_mix_senior > 1.0 ? form.seniority_mix_senior / 100.0 : form.seniority_mix_senior,
+        weekly_burn_rate_variance: form.weekly_burn_rate_variance > 1.0 ? form.weekly_burn_rate_variance / 100.0 : form.weekly_burn_rate_variance,
+        employee_cost_ratio: form.employee_cost_ratio > 1.0 ? form.employee_cost_ratio / 100.0 : form.employee_cost_ratio,
+      };
+
       const res = await fetch(`${API_BASE}/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       const data = await res.json();
