@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import "./globals.css";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -126,6 +126,66 @@ export default function DeltaDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [currency, setCurrency] = useState<"USD" | "INR">("USD");
   const [showForm, setShowForm] = useState(false);
+
+  // Copilot state
+  const [copilotOpen, setCopilotOpen] = useState(false);
+  const [copilotMessages, setCopilotMessages] = useState<{role: string; content: string}[]>([]);
+  const [copilotInput, setCopilotInput] = useState("");
+  const [copilotLoading, setCopilotLoading] = useState(false);
+  const copilotMessagesEnd = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    copilotMessagesEnd.current?.scrollIntoView({ behavior: "smooth" });
+  }, [copilotMessages]);
+
+  const QUICK_QUESTIONS = [
+    "Why is this project at risk?",
+    "What's driving the cost overrun?",
+    "What should I do first?",
+    "Tell me about the team composition",
+  ];
+
+  const handleCopilotSend = useCallback(async (question?: string) => {
+    const q = question || copilotInput.trim();
+    if (!q) return;
+    if (!result) {
+      setCopilotMessages(prev => [
+        ...prev,
+        { role: "user", content: q },
+        { role: "assistant", content: "Please run a prediction first so I have project data to analyze." },
+      ]);
+      setCopilotInput("");
+      return;
+    }
+
+    const userMsg = { role: "user", content: q };
+    setCopilotMessages(prev => [...prev, userMsg]);
+    setCopilotInput("");
+    setCopilotLoading(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/copilot/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: q,
+          project_features: form,
+          prediction_result: result,
+          chat_history: copilotMessages.slice(-6),
+        }),
+      });
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      setCopilotMessages(prev => [...prev, { role: "assistant", content: data.answer }]);
+    } catch {
+      setCopilotMessages(prev => [
+        ...prev,
+        { role: "assistant", content: "Sorry, I couldn't connect to the copilot service. Please try again." },
+      ]);
+    } finally {
+      setCopilotLoading(false);
+    }
+  }, [copilotInput, result, form, copilotMessages]);
 
   const handlePredict = useCallback(async () => {
     setLoading(true);
@@ -769,6 +829,79 @@ export default function DeltaDashboard() {
           <span>Hackathon Submission · Open Innovation Track</span>
         </div>
       </footer>
+
+      {/* AI Copilot FAB + Drawer */}
+      <button
+        className="copilot-fab"
+        onClick={() => setCopilotOpen(!copilotOpen)}
+        title="AI Project Manager Copilot"
+      >
+        {copilotOpen ? "✕" : "🤖"}
+      </button>
+
+      {copilotOpen && (
+        <div className="copilot-drawer">
+          <div className="copilot-header">
+            <div className="copilot-header-title">
+              <span>🤖</span> DELTA Copilot
+            </div>
+            <button className="copilot-close" onClick={() => setCopilotOpen(false)}>✕</button>
+          </div>
+
+          <div className="copilot-messages">
+            {copilotMessages.length === 0 && (
+              <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "12px" }}>
+                Ask me about any predicted project.
+                {!result && <div style={{ marginTop: 6, fontSize: 11 }}>Run a prediction first to get started.</div>}
+              </div>
+            )}
+            {copilotMessages.map((msg, i) => (
+              <div key={i} className={`copilot-msg ${msg.role === "user" ? "user" : "assistant"}`}>
+                {msg.content.split("\n").map((line, j) => (
+                  <span key={j}>
+                    {line.split(/\*\*(.*?)\*\*/g).map((part, k) =>
+                      k % 2 === 1 ? <strong key={k}>{part}</strong> : part
+                    )}
+                    {j < msg.content.split("\n").length - 1 && <br />}
+                  </span>
+                ))}
+              </div>
+            ))}
+            {copilotLoading && (
+              <div className="copilot-typing">
+                <span /><span /><span />
+              </div>
+            )}
+            <div ref={copilotMessagesEnd} />
+          </div>
+
+          {result && copilotMessages.length === 0 && (
+            <div className="copilot-chips">
+              {QUICK_QUESTIONS.map((q, i) => (
+                <button key={i} className="copilot-chip" onClick={() => handleCopilotSend(q)}>{q}</button>
+              ))}
+            </div>
+          )}
+
+          <div className="copilot-input-row">
+            <input
+              className="copilot-input"
+              placeholder="Ask about this project..."
+              value={copilotInput}
+              onChange={e => setCopilotInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !copilotLoading && handleCopilotSend()}
+              disabled={copilotLoading}
+            />
+            <button
+              className="copilot-send"
+              onClick={() => handleCopilotSend()}
+              disabled={copilotLoading || !copilotInput.trim()}
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
