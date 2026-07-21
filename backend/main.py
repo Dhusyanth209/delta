@@ -596,6 +596,200 @@ async def sample_projects():
     return {"projects": projects, "total": len(projects)}
 
 
+# ─── AI Copilot ──────────────────────────────────────────────────────────────
+
+class CopilotChatRequest(BaseModel):
+    question: str = Field(..., description="User's question about the project")
+    project_features: dict = Field(..., description="Raw project features")
+    prediction_result: dict = Field(..., description="Prediction output including risk_class, overrun, factors")
+    chat_history: list[dict] = Field(default=[], description="Previous chat messages")
+
+
+class CopilotChatResponse(BaseModel):
+    answer: str
+    grounded_factors: list[str]
+    model_used: str
+
+
+def _build_copilot_system_prompt(features: dict, prediction: dict) -> str:
+    """Build a grounded system prompt from real model outputs."""
+    risk = prediction.get("risk_class", "unknown")
+    confidence = prediction.get("risk_confidence", 0)
+    overrun_pct = prediction.get("overrun_percentage", 0)
+    cost_usd = prediction.get("predicted_final_cost_usd", 0)
+    budget_usd = prediction.get("budget_planned_usd", 0)
+    
+    factors_text = ""
+    top_factors = prediction.get("top_factors", [])
+    for f in top_factors:
+        name = f.get("feature", "")
+        impact = f.get("impact", "")
+        desc = f.get("description", "")
+        mag = f.get("magnitude", 0)
+        factors_text += f"\n  - {name} ({impact}, magnitude={mag}): {desc}"
+    
+    recs_text = ""
+    recs = prediction.get("recommendations", [])
+    for r in recs:
+        recs_text += f"\n  - {r.get('action', '')}: {r.get('description', '')} (risk reduction: {r.get('expected_risk_reduction', 0):.1%})"
+    
+    return f"""You are DELTA Copilot, an AI Project Manager assistant.
+You answer questions about a specific IT project using ONLY the data provided below.
+NEVER invent statistics, metrics, or numbers. If the data below doesn't contain
+the answer, say so honestly.
+
+## Project Data
+- Industry: {features.get('industry_type', 'N/A')}
+- Team Size: {features.get('team_size', 'N/A')}
+- Seniority Mix: Junior {features.get('seniority_mix_junior', 0):.0%}, Mid {features.get('seniority_mix_mid', 0):.0%}, Senior {features.get('seniority_mix_senior', 0):.0%}
+- Budget (USD): ${budget_usd:,.0f}
+- Duration: {features.get('duration_planned_weeks', 'N/A')} weeks
+- Scope Changes: {features.get('scope_change_count', 0)}
+- Contract Type: {features.get('client_type', 'N/A')}
+- Employee Cost Ratio: {features.get('employee_cost_ratio', 0):.1%}
+- Attrition Events: {features.get('attrition_events', 0)}
+- Burn Rate Variance: {features.get('weekly_burn_rate_variance', 0):.1%}
+
+## Model Prediction (Source of Truth)
+- Risk Classification: {risk} (confidence: {confidence:.1%})
+- Predicted Cost Overrun: {overrun_pct:.1f}%
+- Predicted Final Cost: ${cost_usd:,.0f}
+- Planned Budget: ${budget_usd:,.0f}
+
+## Top Risk/Protective Factors (from SHAP analysis){factors_text}
+
+## RL-Recommended Interventions{recs_text}
+
+## Rules
+1. Ground EVERY claim in the data above. Cite specific numbers.
+2. When explaining risk drivers, reference the SHAP factors by name.
+3. Keep answers concise (2-4 paragraphs max).
+4. Use plain business language, not technical jargon.
+5. If asked about interventions, reference the RL recommendations above.
+6. If asked something not covered by this data, say "I don't have that information in the current project data."
+"""
+
+
+def _fallback_copilot_response(question: str, features: dict, prediction: dict) -> CopilotChatResponse:
+    """Generate a grounded response without Gemini API, using model outputs directly."""
+    risk = prediction.get("risk_class", "unknown")
+    confidence = prediction.get("risk_confidence", 0)
+    overrun_pct = prediction.get("overrun_percentage", 0)
+    budget = prediction.get("budget_planned_usd", 0)
+    cost = prediction.get("predicted_final_cost_usd", 0)
+    
+    top_factors = prediction.get("top_factors", [])
+    factor_names = [f.get("feature", "") for f in top_factors]
+    
+    q_lower = question.lower()
+    
+    # Build factor explanations
+    factor_lines = []
+    for f in top_factors:
+        name = f.get("feature", "").replace("_", " ").title()
+        desc = f.get("description", "")
+        impact = "increasing" if f.get("impact") == "increases_risk" else "reducing"
+        factor_lines.append(f"• **{name}** is {impact} risk: {desc}")
+    factors_block = "\n".join(factor_lines) if factor_lines else "No SHAP factors available."
+    
+    recs = prediction.get("recommendations", [])
+    rec_lines = []
+    for r in recs:
+        reduction = r.get("expected_risk_reduction", 0)
+        rec_lines.append(f"• **{r.get('action', '')}**: {r.get('description', '')} (est. risk reduction: {reduction:.1%})")
+    recs_block = "\n".join(rec_lines) if rec_lines else "No interventions available."
+    
+    if any(kw in q_lower for kw in ["why", "risk", "high risk", "failed", "at risk", "driver", "cause"]):
+        answer = (
+            f"This project is classified as **{risk}** with {confidence:.0%} confidence. "
+            f"The model predicts a cost overrun of **{overrun_pct:.1f}%**, "
+            f"bringing the projected final cost to **${cost:,.0f}** against a planned budget of **${budget:,.0f}**.\n\n"
+            f"The top factors driving this prediction are:\n{factors_block}"
+        )
+    elif any(kw in q_lower for kw in ["intervention", "recommend", "action", "fix", "improve", "reduce", "mitigate"]):
+        answer = (
+            f"Based on the reinforcement learning analysis for this **{risk}** project, "
+            f"here are the recommended interventions:\n\n{recs_block}\n\n"
+            f"These are estimated via simulated counterfactual analysis against the trained model."
+        )
+    elif any(kw in q_lower for kw in ["cost", "overrun", "budget", "expense", "spend"]):
+        answer = (
+            f"The model predicts this project will overrun by **{overrun_pct:.1f}%**. "
+            f"The planned budget is **${budget:,.0f}**, but the projected final cost is **${cost:,.0f}** — "
+            f"an excess of **${cost - budget:,.0f}**.\n\n"
+            f"Key cost factors:\n{factors_block}"
+        )
+    elif any(kw in q_lower for kw in ["team", "senior", "junior", "attrition", "staff"]):
+        team_size = features.get("team_size", "N/A")
+        jr = features.get("seniority_mix_junior", 0)
+        mid = features.get("seniority_mix_mid", 0)
+        sr = features.get("seniority_mix_senior", 0)
+        attrition = features.get("attrition_events", 0)
+        answer = (
+            f"This project has a team of **{team_size}** members with a seniority mix of "
+            f"**{jr:.0%} junior**, **{mid:.0%} mid-level**, and **{sr:.0%} senior**. "
+            f"There have been **{attrition} attrition event(s)**.\n\n"
+            f"Team-related factors in the risk model:\n{factors_block}"
+        )
+    else:
+        answer = (
+            f"This project is classified as **{risk}** (confidence: {confidence:.0%}) with a predicted "
+            f"cost overrun of **{overrun_pct:.1f}%** (${cost:,.0f} vs. ${budget:,.0f} planned).\n\n"
+            f"Key factors:\n{factors_block}\n\n"
+            f"Recommended interventions:\n{recs_block}"
+        )
+    
+    return CopilotChatResponse(
+        answer=answer,
+        grounded_factors=factor_names,
+        model_used="fallback-shap-grounded"
+    )
+
+
+@app.post("/copilot/chat", response_model=CopilotChatResponse)
+async def copilot_chat(req: CopilotChatRequest):
+    """AI Project Manager Copilot — answers grounded in real model outputs."""
+    
+    # Try Gemini API first
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    
+    if api_key:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            
+            system_prompt = _build_copilot_system_prompt(req.project_features, req.prediction_result)
+            
+            # Build conversation
+            messages = []
+            for msg in req.chat_history[-6:]:  # Last 6 messages for context window
+                role = "user" if msg.get("role") == "user" else "model"
+                messages.append({"role": role, "parts": [msg.get("content", "")]})
+            messages.append({"role": "user", "parts": [req.question]})
+            
+            model = genai.GenerativeModel(
+                model_name="gemini-2.0-flash",
+                system_instruction=system_prompt,
+            )
+            response = model.generate_content(messages)
+            
+            # Extract grounded factor names
+            top_factors = req.prediction_result.get("top_factors", [])
+            grounded = [f.get("feature", "") for f in top_factors
+                        if f.get("feature", "") in response.text]
+            
+            return CopilotChatResponse(
+                answer=response.text,
+                grounded_factors=grounded if grounded else [f.get("feature", "") for f in top_factors],
+                model_used="gemini-2.0-flash"
+            )
+        except Exception as e:
+            print(f"Gemini API error, falling back: {e}")
+    
+    # Fallback: model-grounded response engine
+    return _fallback_copilot_response(req.question, req.project_features, req.prediction_result)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
