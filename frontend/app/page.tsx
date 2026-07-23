@@ -983,6 +983,47 @@ export default function DeltaDashboard() {
                         </div>
                       </div>
 
+                      {/* Highlighted Analytical Inference Box */}
+                      <div style={{
+                        background: "rgba(46, 92, 255, 0.08)",
+                        border: "1px solid rgba(46, 92, 255, 0.3)",
+                        borderRadius: "var(--radius-md)",
+                        padding: "16px 20px",
+                        marginTop: "16px",
+                      }}>
+                        <div style={{ fontSize: "13px", fontWeight: "700", color: "#60A5FA", marginBottom: "8px", display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span>🔍</span> Scenario Outcome Text Inference
+                        </div>
+                        <div style={{ fontSize: "12.5px", color: "var(--text-primary)", lineHeight: "1.7" }}>
+                          Under this simulated scenario, the project yields a predicted final cost of{" "}
+                          <strong>
+                            {currency === "USD"
+                              ? `$${simResult.simulated_prediction.predicted_final_cost_usd.toLocaleString()}`
+                              : `₹${simResult.simulated_prediction.predicted_final_cost_inr.toLocaleString()}`}
+                          </strong>{" "}
+                          (baseline:{" "}
+                          {currency === "USD"
+                            ? `$${simResult.baseline_prediction.predicted_final_cost_usd.toLocaleString()}`
+                            : `₹${simResult.baseline_prediction.predicted_final_cost_inr.toLocaleString()}`}
+                          ), producing a net variance of{" "}
+                          <strong style={{ color: simResult.delta.cost_diff_usd <= 0 ? "#34D399" : "#F87171" }}>
+                            {simResult.delta.cost_diff_usd <= 0 ? "-" : "+"}
+                            {currency === "USD"
+                              ? `$${Math.abs(simResult.delta.cost_diff_usd).toLocaleString()}`
+                              : `₹${Math.abs(simResult.delta.cost_diff_inr).toLocaleString()}`}
+                          </strong>{" "}
+                          ({simResult.delta.cost_diff_usd <= 0 ? "labor/scope savings" : "additional overhead cost"}).{" "}
+                          The overall overrun ratio stands at <strong>{simResult.simulated_prediction.overrun_percentage > 0 ? `+${simResult.simulated_prediction.overrun_percentage.toFixed(1)}%` : `${simResult.simulated_prediction.overrun_percentage.toFixed(1)}%`}</strong>{" "}
+                          ({simResult.delta.overrun_diff_pct > 0 ? `+${simResult.delta.overrun_diff_pct.toFixed(1)}% shift` : `${simResult.delta.overrun_diff_pct.toFixed(1)}% shift`} from baseline), while the project risk status is{" "}
+                          <strong>
+                            {simResult.delta.risk_changed
+                              ? `changed from ${simResult.delta.baseline_risk.toUpperCase()} ➔ ${simResult.delta.simulated_risk.toUpperCase()}`
+                              : `MAINTAINED as ${simResult.delta.simulated_risk.toUpperCase()}`}
+                          </strong>{" "}
+                          with <strong>{(simResult.simulated_prediction.risk_confidence * 100).toFixed(0)}%</strong> model confidence.
+                        </div>
+                      </div>
+
                       {/* Point-Wise Executive Analysis & State Explanations */}
                       <div style={{
                         background: "rgba(0, 0, 0, 0.3)",
