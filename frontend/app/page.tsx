@@ -983,19 +983,89 @@ export default function DeltaDashboard() {
                         </div>
                       </div>
 
-                      {/* State Explanation Banner */}
-                      <div style={{ background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: "var(--radius-sm)", fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6, marginTop: 4 }}>
-                        <strong>📌 State Explanation & Analysis:</strong>{" "}
-                        {simResult.delta.is_improvement ? (
-                          <span>
-                            This simulated scenario reduces projected financial risk by <strong>{currency === "USD" ? `$${Math.abs(simResult.delta.cost_diff_usd).toLocaleString()}` : `₹${Math.abs(simResult.delta.cost_diff_inr).toLocaleString()}`}</strong>.
-                            {simResult.delta.risk_changed && ` The project classification successfully improves from ${simResult.delta.baseline_risk.toUpperCase()} to ${simResult.delta.simulated_risk.toUpperCase()}.`}
-                          </span>
-                        ) : (
-                          <span>
-                            This simulated scenario increases project cost overrun by <strong>{currency === "USD" ? `$${Math.abs(simResult.delta.cost_diff_usd).toLocaleString()}` : `₹${Math.abs(simResult.delta.cost_diff_inr).toLocaleString()}`}</strong> (+{simResult.delta.overrun_diff_pct.toFixed(1)}% overrun shift). Consider counter-balancing with scope reduction or team right-sizing.
-                          </span>
-                        )}
+                      {/* Point-Wise Executive Analysis & State Explanations */}
+                      <div style={{
+                        background: "rgba(0, 0, 0, 0.3)",
+                        border: "1px solid var(--glass-border)",
+                        borderRadius: "var(--radius-md)",
+                        padding: "20px",
+                        marginTop: "8px",
+                      }}>
+                        <div style={{
+                          fontSize: "13px",
+                          fontWeight: "700",
+                          color: "var(--text-primary)",
+                          marginBottom: "14px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          borderBottom: "1px solid rgba(255,255,255,0.08)",
+                          paddingBottom: "8px"
+                        }}>
+                          <span>📋</span> Scenario State Analysis & Operational Insights (Point-Wise Breakdown)
+                        </div>
+
+                        <div style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                          gap: "20px"
+                        }}>
+                          {/* Point 1: Operational Impact */}
+                          <div style={{ background: "rgba(255,255,255,0.02)", padding: "14px", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                            <div style={{ fontSize: "12px", fontWeight: "700", color: "#60A5FA", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span>👥</span> Operational Trade-Offs
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.7" }}>
+                              <li>
+                                <strong>Staffing:</strong> {simTeamDelta === 0 ? "Baseline team size maintained." : simTeamDelta > 0 ? `Added ${simTeamDelta} developer(s). Increases throughput but adds est. $${(simTeamDelta * 12000).toLocaleString()}/mo labor burn.` : `Reduced by ${Math.abs(simTeamDelta)} developer(s). Direct cost reduction, but elevates burn rate variance risk.`}
+                              </li>
+                              <li>
+                                <strong>Scope Control:</strong> {simScopeDelta === 0 ? "Baseline scope change count." : simScopeDelta < 0 ? `Freezing ${Math.abs(simScopeDelta)} scope change(s) prevents project scope creep and cuts re-work overhead.` : `Accepting ${simScopeDelta} new scope change(s) introduces delivery bottleneck risks.`}
+                              </li>
+                              <li>
+                                <strong>Contract Risk:</strong> {(simClientType || form.client_type) === "fixed_bid" ? "Fixed Bid contract penalizes cost overruns heavily against vendor margins." : (simClientType || form.client_type) === "outcome_based" ? "Outcome-Based contract shares risk based on milestone deliverables." : "Time & Material passes burn variance to client."}
+                              </li>
+                            </ul>
+                          </div>
+
+                          {/* Point 2: Financial Delta */}
+                          <div style={{ background: "rgba(255,255,255,0.02)", padding: "14px", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                            <div style={{ fontSize: "12px", fontWeight: "700", color: simResult.delta.is_improvement ? "#34D399" : "#F87171", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span>📊</span> Financial & Risk Variance
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.7" }}>
+                              <li>
+                                <strong>Net Impact:</strong> {simResult.delta.cost_diff_usd <= 0 ? <span style={{ color: "#34D399" }}>Est. Savings of {currency === "USD" ? `$${Math.abs(simResult.delta.cost_diff_usd).toLocaleString()}` : `₹${Math.abs(simResult.delta.cost_diff_inr).toLocaleString()}`}</span> : <span style={{ color: "#F87171" }}>Est. Cost Excess of {currency === "USD" ? `$${Math.abs(simResult.delta.cost_diff_usd).toLocaleString()}` : `₹${Math.abs(simResult.delta.cost_diff_inr).toLocaleString()}`}</span>}
+                              </li>
+                              <li>
+                                <strong>Overrun Shift:</strong> {simResult.delta.overrun_diff_pct === 0 ? "No change from baseline overrun." : simResult.delta.overrun_diff_pct < 0 ? `Overrun reduced by ${Math.abs(simResult.delta.overrun_diff_pct).toFixed(1)}%` : `Overrun increased by ${simResult.delta.overrun_diff_pct.toFixed(1)}%`}
+                              </li>
+                              <li>
+                                <strong>Risk Status:</strong> {simResult.delta.risk_changed ? `Status changed from ${simResult.delta.baseline_risk.toUpperCase()} ➔ ${simResult.delta.simulated_risk.toUpperCase()}` : `Maintained as ${simResult.delta.simulated_risk.toUpperCase()} (${(simResult.simulated_prediction.risk_confidence * 100).toFixed(0)}% model confidence)`}
+                              </li>
+                            </ul>
+                          </div>
+
+                          {/* Point 3: Strategic Recommendation */}
+                          <div style={{ background: "rgba(255,255,255,0.02)", padding: "14px", borderRadius: "var(--radius-sm)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                            <div style={{ fontSize: "12px", fontWeight: "700", color: "#FBBF24", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span>💡</span> Strategic PM Guidance
+                            </div>
+                            <ul style={{ margin: 0, paddingLeft: "16px", fontSize: "12px", color: "var(--text-secondary)", lineHeight: "1.7" }}>
+                              {simResult.delta.is_improvement ? (
+                                <>
+                                  <li><strong>Recommended Action:</strong> Proceed with this scenario. It provides a net positive financial buffer.</li>
+                                  <li><strong>Key Benefit:</strong> Lower risk classification without exceeding approved budget limits.</li>
+                                </>
+                              ) : (
+                                <>
+                                  <li><strong>Recommended Action:</strong> Counter-balance by reducing scope changes by 1-2 items to offset labor cost increases.</li>
+                                  <li><strong>Mitigation Strategy:</strong> Consider negotiating contract structure to Outcome-Based pricing.</li>
+                                </>
+                              )}
+                            </ul>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
