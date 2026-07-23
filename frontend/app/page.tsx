@@ -141,6 +141,12 @@ export default function DeltaDashboard() {
   const [simResult, setSimResult] = useState<any>(null);
   const [simLoading, setSimLoading] = useState(false);
 
+  // Executive Report state
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportContent, setReportContent] = useState<string | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportCopied, setReportCopied] = useState(false);
+
   useEffect(() => {
     copilotMessagesEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [copilotMessages]);
@@ -217,6 +223,31 @@ export default function DeltaDashboard() {
       setSimLoading(false);
     }
   }, [form]);
+
+  const handleGenerateReport = useCallback(async () => {
+    if (!form || !result) return;
+    setReportLoading(true);
+    setReportOpen(true);
+    try {
+      const res = await fetch(`${API_BASE}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_features: form,
+          prediction_result: result,
+          simulation_result: simResult || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error(`Report error: ${res.status}`);
+      const data = await res.json();
+      setReportContent(data.markdown_content);
+    } catch (err: any) {
+      console.error("Report generation failed:", err);
+      setReportContent("Failed to generate report. Please try again.");
+    } finally {
+      setReportLoading(false);
+    }
+  }, [form, result, simResult]);
 
   const handlePredict = useCallback(async () => {
     setLoading(true);
@@ -662,6 +693,22 @@ export default function DeltaDashboard() {
           {result && (
             <>
               <div className="divider" />
+
+              {/* Action Bar for Executive Reports */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
+                  Project Risk & Overrun Analysis
+                </div>
+                <button
+                  className="sim-btn active"
+                  style={{ padding: "10px 18px", fontSize: 13, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 16px rgba(46, 92, 255, 0.3)" }}
+                  onClick={handleGenerateReport}
+                  disabled={reportLoading}
+                >
+                  <span>📄</span> {reportLoading ? "Generating Report..." : "Export Executive PMO Report"}
+                </button>
+              </div>
+
               <div className="results-grid">
                 {/* Risk Level Panel */}
                 <div className="panel glass">
@@ -1159,6 +1206,52 @@ export default function DeltaDashboard() {
           <span>Hackathon Submission · Open Innovation Track</span>
         </div>
       </footer>
+
+      {/* Executive Report Modal Drawer */}
+      {reportOpen && (
+        <div className="report-modal-overlay" onClick={() => setReportOpen(false)}>
+          <div className="report-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="report-modal-header">
+              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
+                <span>📄</span> PMO Executive Audit Report
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button
+                  className="sim-btn"
+                  onClick={() => {
+                    if (reportContent) {
+                      navigator.clipboard.writeText(reportContent);
+                      setReportCopied(true);
+                      setTimeout(() => setReportCopied(false), 2000);
+                    }
+                  }}
+                  disabled={!reportContent}
+                >
+                  {reportCopied ? "✓ Copied!" : "📋 Copy Markdown"}
+                </button>
+                <button
+                  className="sim-btn active"
+                  onClick={() => window.print()}
+                  disabled={!reportContent}
+                >
+                  🖨️ Print / Save as PDF
+                </button>
+                <button className="copilot-close" onClick={() => setReportOpen(false)}>✕</button>
+              </div>
+            </div>
+
+            <div className="report-modal-body">
+              {reportLoading ? (
+                <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-muted)" }}>
+                  Generating PMO Executive Audit Report...
+                </div>
+              ) : (
+                reportContent
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Copilot FAB + Drawer */}
       <button
