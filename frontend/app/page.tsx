@@ -134,6 +134,13 @@ export default function DeltaDashboard() {
   const [copilotLoading, setCopilotLoading] = useState(false);
   const copilotMessagesEnd = useRef<HTMLDivElement>(null);
 
+  // What-If Simulation state
+  const [simTeamDelta, setSimTeamDelta] = useState(0);
+  const [simScopeDelta, setSimScopeDelta] = useState(0);
+  const [simClientType, setSimClientType] = useState<string | null>(null);
+  const [simResult, setSimResult] = useState<any>(null);
+  const [simLoading, setSimLoading] = useState(false);
+
   useEffect(() => {
     copilotMessagesEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [copilotMessages]);
@@ -186,6 +193,30 @@ export default function DeltaDashboard() {
       setCopilotLoading(false);
     }
   }, [copilotInput, result, form, copilotMessages]);
+
+  const handleSimulate = useCallback(async (teamDelta: number, scopeDelta: number, clientTypeOverride?: string | null) => {
+    if (!form) return;
+    setSimLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/simulate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          baseline_features: form,
+          team_size_delta: teamDelta,
+          scope_change_delta: scopeDelta,
+          client_type: clientTypeOverride || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error(`Simulation error: ${res.status}`);
+      const data = await res.json();
+      setSimResult(data);
+    } catch (err: any) {
+      console.error("Simulation failed:", err);
+    } finally {
+      setSimLoading(false);
+    }
+  }, [form]);
 
   const handlePredict = useCallback(async () => {
     setLoading(true);
@@ -776,11 +807,115 @@ export default function DeltaDashboard() {
                               : "Maintain"}
                           </span>
                         </div>
-                        <div className="factor-description">{rec.description}</div>
+              <div className="factor-description">{rec.description}</div>
                       </div>
                     ))}
                   </div>
                 )}
+
+                {/* What-If Simulation Panel */}
+                <div className="sim-panel">
+                  <div className="sim-title">
+                    <span>⚡</span> What-If Scenario Simulator
+                  </div>
+                  <div className="sim-subtitle">
+                    Test live parameter adjustments to evaluate cost & risk impact in real-time
+                  </div>
+
+                  <div className="sim-grid">
+                    {/* Team Size Controls */}
+                    <div className="sim-control-group">
+                      <div className="sim-control-label">Team Size (Baseline: {form.team_size})</div>
+                      <div className="sim-btn-row">
+                        {[-2, -1, 0, 1, 2].map((d) => (
+                          <button
+                            key={d}
+                            className={`sim-btn ${simTeamDelta === d ? "active" : ""}`}
+                            onClick={() => {
+                              setSimTeamDelta(d);
+                              handleSimulate(d, simScopeDelta, simClientType);
+                            }}
+                          >
+                            {d > 0 ? `+${d}` : d}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Scope Changes Controls */}
+                    <div className="sim-control-group">
+                      <div className="sim-control-label">Scope Changes (Baseline: {form.scope_change_count})</div>
+                      <div className="sim-btn-row">
+                        {[-2, -1, 0, 1, 2].map((d) => (
+                          <button
+                            key={d}
+                            className={`sim-btn ${simScopeDelta === d ? "active" : ""}`}
+                            onClick={() => {
+                              setSimScopeDelta(d);
+                              handleSimulate(simTeamDelta, d, simClientType);
+                            }}
+                          >
+                            {d > 0 ? `+${d}` : d}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Contract Type Controls */}
+                    <div className="sim-control-group">
+                      <div className="sim-control-label">Contract Type</div>
+                      <div className="sim-btn-row">
+                        {[
+                          { label: "Fixed", val: "fixed_bid" },
+                          { label: "Outcome", val: "outcome_based" },
+                          { label: "T&M", val: "time_and_material" },
+                        ].map((c) => (
+                          <button
+                            key={c.val}
+                            className={`sim-btn ${(simClientType || form.client_type) === c.val ? "active" : ""}`}
+                            onClick={() => {
+                              setSimClientType(c.val);
+                              handleSimulate(simTeamDelta, simScopeDelta, c.val);
+                            }}
+                          >
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Simulation Banner Result */}
+                  {simResult && (
+                    <div className={`sim-banner ${simResult.delta.is_improvement ? "improved" : "worsened"}`}>
+                      <div className="sim-metric-box">
+                        <div className="sim-metric-label">Baseline vs Simulated Risk</div>
+                        <div className="sim-metric-val">
+                          {simResult.delta.baseline_risk} ➔ {simResult.delta.simulated_risk}
+                        </div>
+                      </div>
+
+                      <div className="sim-metric-box">
+                        <div className="sim-metric-label">Cost Impact</div>
+                        <div className="sim-metric-val">
+                          {currency === "USD"
+                            ? `$${simResult.simulated_prediction.predicted_final_cost_usd.toLocaleString()}`
+                            : `₹${simResult.simulated_prediction.predicted_final_cost_inr.toLocaleString()}`}
+                        </div>
+                      </div>
+
+                      <div className="sim-metric-box">
+                        <div className="sim-metric-label">Net Delta ($)</div>
+                        <span className={`sim-delta-badge ${simResult.delta.cost_diff_usd <= 0 ? "pos" : "neg"}`}>
+                          {simResult.delta.cost_diff_usd <= 0 ? "↓ Savings: " : "↑ Excess: "}
+                          {currency === "USD"
+                            ? `$${Math.abs(simResult.delta.cost_diff_usd).toLocaleString()}`
+                            : `₹${Math.abs(simResult.delta.cost_diff_inr).toLocaleString()}`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           )}

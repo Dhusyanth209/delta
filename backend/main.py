@@ -18,6 +18,7 @@ Endpoints:
   GET  /recommend/{idx}     → RL intervention recommendations for sample project
 """
 
+from typing import Optional, Dict, Any, List
 import json
 import os
 import time
@@ -612,62 +613,50 @@ class CopilotChatResponse(BaseModel):
 
 
 def _build_copilot_system_prompt(features: dict, prediction: dict) -> str:
-    """Build a grounded system prompt from real model outputs."""
+    """Build a compact, grounded system prompt optimized for small local LLMs."""
     risk = prediction.get("risk_class", "unknown")
     confidence = prediction.get("risk_confidence", 0)
     overrun_pct = prediction.get("overrun_percentage", 0)
     cost_usd = prediction.get("predicted_final_cost_usd", 0)
     budget_usd = prediction.get("budget_planned_usd", 0)
     
-    factors_text = ""
-    top_factors = prediction.get("top_factors", [])
-    for f in top_factors:
-        name = f.get("feature", "")
-        impact = f.get("impact", "")
-        desc = f.get("description", "")
-        mag = f.get("magnitude", 0)
-        factors_text += f"\n  - {name} ({impact}, magnitude={mag}): {desc}"
+    # Build compact factor list
+    factors_lines = []
+    for f in prediction.get("top_factors", [])[:5]:
+        name = f.get("feature", "").replace("_", " ").title()
+        impact = "INCREASES risk" if f.get("impact") == "increases_risk" else "REDUCES risk"
+        factors_lines.append(f"- {name}: {impact}. {f.get('description', '')}")
+    factors_text = "\n".join(factors_lines) if factors_lines else "- No factors available"
     
-    recs_text = ""
-    recs = prediction.get("recommendations", [])
-    for r in recs:
-        recs_text += f"\n  - {r.get('action', '')}: {r.get('description', '')} (risk reduction: {r.get('expected_risk_reduction', 0):.1%})"
+    # Build compact recommendations
+    rec_lines = []
+    for r in prediction.get("recommendations", [])[:3]:
+        red = r.get("expected_risk_reduction", 0)
+        rec_lines.append(f"- {r.get('action', '')}: {r.get('description', '')} (reduces risk by {red:.0%})")
+    recs_text = "\n".join(rec_lines) if rec_lines else "- No recommendations available"
     
-    return f"""You are DELTA Copilot, an AI Project Manager assistant.
-You answer questions about a specific IT project using ONLY the data provided below.
-NEVER invent statistics, metrics, or numbers. If the data below doesn't contain
-the answer, say so honestly.
+    return f"""You are DELTA Copilot, an AI assistant for IT project risk analysis.
+Answer ONLY using the project data below. Do NOT invent numbers. Be concise (2-3 paragraphs max).
 
-## Project Data
+PROJECT FACTS:
 - Industry: {features.get('industry_type', 'N/A')}
-- Team Size: {features.get('team_size', 'N/A')}
-- Seniority Mix: Junior {features.get('seniority_mix_junior', 0):.0%}, Mid {features.get('seniority_mix_mid', 0):.0%}, Senior {features.get('seniority_mix_senior', 0):.0%}
-- Budget (USD): ${budget_usd:,.0f}
-- Duration: {features.get('duration_planned_weeks', 'N/A')} weeks
-- Scope Changes: {features.get('scope_change_count', 0)}
-- Contract Type: {features.get('client_type', 'N/A')}
-- Employee Cost Ratio: {features.get('employee_cost_ratio', 0):.1%}
-- Attrition Events: {features.get('attrition_events', 0)}
+- Team: {features.get('team_size', 'N/A')} people (Junior {features.get('seniority_mix_junior', 0):.0%}, Mid {features.get('seniority_mix_mid', 0):.0%}, Senior {features.get('seniority_mix_senior', 0):.0%})
+- Budget: ${budget_usd:,.0f} | Duration: {features.get('duration_planned_weeks', 'N/A')} weeks
+- Scope Changes: {features.get('scope_change_count', 0)} | Contract: {features.get('client_type', 'N/A')}
+- Employee Cost Ratio: {features.get('employee_cost_ratio', 0):.1%} | Attrition Events: {features.get('attrition_events', 0)}
 - Burn Rate Variance: {features.get('weekly_burn_rate_variance', 0):.1%}
 
-## Model Prediction (Source of Truth)
-- Risk Classification: {risk} (confidence: {confidence:.1%})
-- Predicted Cost Overrun: {overrun_pct:.1f}%
-- Predicted Final Cost: ${cost_usd:,.0f}
-- Planned Budget: ${budget_usd:,.0f}
+PREDICTION:
+- Risk: {risk} (confidence: {confidence:.0%})
+- Cost Overrun: {overrun_pct:.1f}% | Final Cost: ${cost_usd:,.0f} vs Budget: ${budget_usd:,.0f}
 
-## Top Risk/Protective Factors (from SHAP analysis){factors_text}
+RISK FACTORS:
+{factors_text}
 
-## RL-Recommended Interventions{recs_text}
+RECOMMENDED ACTIONS:
+{recs_text}
 
-## Rules
-1. Ground EVERY claim in the data above. Cite specific numbers.
-2. When explaining risk drivers, reference the SHAP factors by name.
-3. Keep answers concise (2-4 paragraphs max).
-4. Use plain business language, not technical jargon.
-5. If asked about interventions, reference the RL recommendations above.
-6. If asked something not covered by this data, say "I don't have that information in the current project data."
-"""
+RULES: Only cite numbers from above. Reference factor names when explaining risk. If unsure, say so."""
 
 
 def _fallback_copilot_response(question: str, features: dict, prediction: dict) -> CopilotChatResponse:
@@ -746,11 +735,72 @@ def _fallback_copilot_response(question: str, features: dict, prediction: dict) 
     )
 
 
+def _call_ollama_sync(messages: list) -> dict:
+    """Blocking Ollama HTTP call — runs in a thread to avoid blocking async loop."""
+    import urllib.request
+    import json
+
+    payload = {
+        "model": "llama3.2:latest",
+        "messages": messages,
+        "stream": False,
+        "options": {
+            "temperature": 0.2,
+            "num_predict": 250,
+            "top_p": 0.9,
+        }
+    }
+
+    req = urllib.request.Request(
+        "http://localhost:11434/api/chat",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=90) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+async def _call_ollama_copilot(question: str, features: dict, prediction: dict, chat_history: list) -> CopilotChatResponse:
+    """Query local Jarvis / Ollama LLM — runs in thread pool to avoid blocking."""
+    import asyncio
+
+    system_prompt = _build_copilot_system_prompt(features, prediction)
+
+    # Keep context tight: system + last 2 exchanges + current question
+    messages = [{"role": "system", "content": system_prompt}]
+    for msg in chat_history[-4:]:
+        role = "user" if msg.get("role") == "user" else "assistant"
+        messages.append({"role": role, "content": msg.get("content", "")})
+    messages.append({"role": "user", "content": question})
+
+    # Run the blocking HTTP call in a thread so we don't block FastAPI's event loop
+    data = await asyncio.to_thread(_call_ollama_sync, messages)
+
+    text = data.get("message", {}).get("content", "")
+    if text:
+        top_factors = prediction.get("top_factors", [])
+        grounded = [f.get("feature", "") for f in top_factors if f.get("feature", "") in text]
+        return CopilotChatResponse(
+            answer=text,
+            grounded_factors=grounded if grounded else [f.get("feature", "") for f in top_factors],
+            model_used="jarvis-ollama (llama3.2)"
+        )
+
+    raise RuntimeError("Empty response from Ollama")
+
+
 @app.post("/copilot/chat", response_model=CopilotChatResponse)
 async def copilot_chat(req: CopilotChatRequest):
     """AI Project Manager Copilot — answers grounded in real model outputs."""
     
-    # Try Gemini API first
+    # 1. Try local Jarvis / Ollama LLM endpoint first
+    try:
+        return await _call_ollama_copilot(req.question, req.project_features, req.prediction_result, req.chat_history)
+    except Exception as e:
+        print(f"Jarvis/Ollama fallback: {e}")
+    
+    # 2. Try Gemini API
     api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     
     if api_key:
@@ -786,10 +836,87 @@ async def copilot_chat(req: CopilotChatRequest):
         except Exception as e:
             print(f"Gemini API error, falling back: {e}")
     
-    # Fallback: model-grounded response engine
+    # 3. Model-grounded SHAP response engine fallback
     return _fallback_copilot_response(req.question, req.project_features, req.prediction_result)
+
+
+# ─── What-If Simulation ──────────────────────────────────────────────────────
+
+class SimulationRequest(BaseModel):
+    baseline_features: ProjectFeatures = Field(..., description="Original baseline project parameters")
+    team_size_delta: int = Field(default=0, description="Adjustment to team size (+/-)")
+    scope_change_delta: int = Field(default=0, description="Adjustment to scope change count (+/-)")
+    client_type: Optional[str] = Field(default=None, description="Override client contract type")
+    seniority_mix_junior: Optional[float] = Field(default=None, description="Override junior ratio")
+    seniority_mix_mid: Optional[float] = Field(default=None, description="Override mid ratio")
+    seniority_mix_senior: Optional[float] = Field(default=None, description="Override senior ratio")
+
+
+class SimulationResponse(BaseModel):
+    baseline_prediction: dict
+    simulated_prediction: dict
+    delta: dict
+    simulated_features: dict
+
+
+@app.post("/simulate", response_model=SimulationResponse)
+async def simulate_scenario(req: SimulationRequest):
+    """Run a counterfactual What-If simulation comparing baseline vs modified project."""
+    
+    # 1. Run baseline prediction
+    baseline_resp = await predict(req.baseline_features)
+    baseline_result = baseline_resp.model_dump()
+    
+    # 2. Construct simulated feature set
+    sim_features_dict = req.baseline_features.model_dump()
+    
+    # Apply deltas
+    sim_features_dict["team_size"] = max(1, sim_features_dict["team_size"] + req.team_size_delta)
+    sim_features_dict["scope_change_count"] = max(0, sim_features_dict["scope_change_count"] + req.scope_change_delta)
+    
+    if req.client_type:
+        sim_features_dict["client_type"] = req.client_type
+    if req.seniority_mix_junior is not None:
+        sim_features_dict["seniority_mix_junior"] = req.seniority_mix_junior
+    if req.seniority_mix_mid is not None:
+        sim_features_dict["seniority_mix_mid"] = req.seniority_mix_mid
+    if req.seniority_mix_senior is not None:
+        sim_features_dict["seniority_mix_senior"] = req.seniority_mix_senior
+        
+    sim_features = ProjectFeatures(**sim_features_dict)
+    
+    # 3. Run simulated prediction
+    simulated_resp = await predict(sim_features)
+    simulated_result = simulated_resp.model_dump()
+    
+    # 4. Compute deltas
+    cost_diff_usd = simulated_result["predicted_final_cost_usd"] - baseline_result["predicted_final_cost_usd"]
+    cost_diff_inr = simulated_result["predicted_final_cost_inr"] - baseline_result["predicted_final_cost_inr"]
+    overrun_diff_pct = simulated_result["overrun_percentage"] - baseline_result["overrun_percentage"]
+    confidence_diff = simulated_result["risk_confidence"] - baseline_result["risk_confidence"]
+    
+    risk_changed = baseline_result["risk_class"] != simulated_result["risk_class"]
+    
+    delta_summary = {
+        "cost_diff_usd": round(cost_diff_usd, 2),
+        "cost_diff_inr": round(cost_diff_inr, 2),
+        "overrun_diff_pct": round(overrun_diff_pct, 2),
+        "confidence_diff": round(confidence_diff, 4),
+        "risk_changed": risk_changed,
+        "baseline_risk": baseline_result["risk_class"],
+        "simulated_risk": simulated_result["risk_class"],
+        "is_improvement": cost_diff_usd < 0 or (baseline_result["risk_class"] != "on_track" and simulated_result["risk_class"] == "on_track"),
+    }
+    
+    return SimulationResponse(
+        baseline_prediction=baseline_result,
+        simulated_prediction=simulated_result,
+        delta=delta_summary,
+        simulated_features=sim_features_dict
+    )
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
