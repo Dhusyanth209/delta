@@ -813,24 +813,38 @@ export default function DeltaDashboard() {
                   </div>
                 )}
 
-                {/* What-If Simulation Panel */}
-                <div className="sim-panel">
-                  <div className="sim-title">
-                    <span>⚡</span> What-If Scenario Simulator
-                  </div>
-                  <div className="sim-subtitle">
-                    Test live parameter adjustments to evaluate cost & risk impact in real-time
+                {/* Expanded What-If Simulation Panel */}
+                <div className="sim-panel full-panel">
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
+                    <div>
+                      <div className="sim-title" style={{ fontSize: 18 }}>
+                        <span>⚡</span> Interactive What-If Counterfactual Scenario Simulator
+                      </div>
+                      <div className="sim-subtitle" style={{ fontSize: 13, marginTop: 4 }}>
+                        Simulate real-time operational shifts against the trained XGBoost model to quantify financial and risk impact before committing resources.
+                      </div>
+                    </div>
+                    {simResult && (
+                      <span className={`sim-delta-badge ${simResult.delta.is_improvement ? "pos" : "neg"}`} style={{ fontSize: 14, padding: "8px 16px" }}>
+                        {simResult.delta.is_improvement ? "✓ Favorable Outcome" : "⚠ Adverse Impact"}
+                      </span>
+                    )}
                   </div>
 
-                  <div className="sim-grid">
-                    {/* Team Size Controls */}
-                    <div className="sim-control-group">
-                      <div className="sim-control-label">Team Size (Baseline: {form.team_size})</div>
-                      <div className="sim-btn-row">
-                        {[-2, -1, 0, 1, 2].map((d) => (
+                  {/* Parameter Controls Grid */}
+                  <div className="sim-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 20, marginTop: 20 }}>
+                    {/* Team Size Controls + State Explanation */}
+                    <div className="sim-control-group" style={{ background: "rgba(255,255,255,0.02)", padding: 16, borderRadius: "var(--radius-md)", border: "1px solid var(--glass-border)" }}>
+                      <div className="sim-control-label" style={{ fontSize: 13, display: "flex", justifyContent: "space-between" }}>
+                        <span>👥 Team Size Adjustment</span>
+                        <span style={{ color: "var(--accent-blue)" }}>Baseline: {form.team_size} members</span>
+                      </div>
+                      <div className="sim-btn-row" style={{ marginTop: 8 }}>
+                        {[-3, -2, -1, 0, 1, 2, 3].map((d) => (
                           <button
                             key={d}
                             className={`sim-btn ${simTeamDelta === d ? "active" : ""}`}
+                            style={{ flex: 1, padding: "8px 0" }}
                             onClick={() => {
                               setSimTeamDelta(d);
                               handleSimulate(d, simScopeDelta, simClientType);
@@ -840,16 +854,25 @@ export default function DeltaDashboard() {
                           </button>
                         ))}
                       </div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10, lineHeight: 1.5 }}>
+                        {simTeamDelta === 0 && "• Operating at baseline staffing level."}
+                        {simTeamDelta > 0 && `• Adding ${simTeamDelta} developer(s) increases throughput but raises labor burn rate by est. $${(simTeamDelta * 12000).toLocaleString()}/mo.`}
+                        {simTeamDelta < 0 && `• Reducing team by ${Math.abs(simTeamDelta)} member(s) cuts immediate labor expense but elevates bottleneck & burn variance risks.`}
+                      </div>
                     </div>
 
-                    {/* Scope Changes Controls */}
-                    <div className="sim-control-group">
-                      <div className="sim-control-label">Scope Changes (Baseline: {form.scope_change_count})</div>
-                      <div className="sim-btn-row">
-                        {[-2, -1, 0, 1, 2].map((d) => (
+                    {/* Scope Changes Controls + State Explanation */}
+                    <div className="sim-control-group" style={{ background: "rgba(255,255,255,0.02)", padding: 16, borderRadius: "var(--radius-md)", border: "1px solid var(--glass-border)" }}>
+                      <div className="sim-control-label" style={{ fontSize: 13, display: "flex", justifyContent: "space-between" }}>
+                        <span>📝 Scope Change Requests</span>
+                        <span style={{ color: "var(--accent-blue)" }}>Baseline: {form.scope_change_count} changes</span>
+                      </div>
+                      <div className="sim-btn-row" style={{ marginTop: 8 }}>
+                        {[-3, -2, -1, 0, 1, 2, 3].map((d) => (
                           <button
                             key={d}
                             className={`sim-btn ${simScopeDelta === d ? "active" : ""}`}
+                            style={{ flex: 1, padding: "8px 0" }}
                             onClick={() => {
                               setSimScopeDelta(d);
                               handleSimulate(simTeamDelta, d, simClientType);
@@ -859,20 +882,29 @@ export default function DeltaDashboard() {
                           </button>
                         ))}
                       </div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10, lineHeight: 1.5 }}>
+                        {simScopeDelta === 0 && "• Evaluating under baseline scope change frequency."}
+                        {simScopeDelta < 0 && `• Freeze/Negotiate ${Math.abs(simScopeDelta)} scope change(s): Significantly reduces re-work overhead and cost overrun probability.`}
+                        {simScopeDelta > 0 && `• Accepting ${simScopeDelta} additional scope change(s): Expands feature set but compounds schedule slippage and cost overrun risk.`}
+                      </div>
                     </div>
 
-                    {/* Contract Type Controls */}
-                    <div className="sim-control-group">
-                      <div className="sim-control-label">Contract Type</div>
-                      <div className="sim-btn-row">
+                    {/* Contract Type Controls + State Explanation */}
+                    <div className="sim-control-group" style={{ background: "rgba(255,255,255,0.02)", padding: 16, borderRadius: "var(--radius-md)", border: "1px solid var(--glass-border)" }}>
+                      <div className="sim-control-label" style={{ fontSize: 13, display: "flex", justifyContent: "space-between" }}>
+                        <span>📑 Contract Structure</span>
+                        <span style={{ color: "var(--accent-blue)" }}>Current: {simClientType || form.client_type}</span>
+                      </div>
+                      <div className="sim-btn-row" style={{ marginTop: 8 }}>
                         {[
-                          { label: "Fixed", val: "fixed_bid" },
-                          { label: "Outcome", val: "outcome_based" },
-                          { label: "T&M", val: "time_and_material" },
+                          { label: "Fixed Bid", val: "fixed_bid" },
+                          { label: "Outcome Based", val: "outcome_based" },
+                          { label: "Time & Material", val: "time_and_material" },
                         ].map((c) => (
                           <button
                             key={c.val}
                             className={`sim-btn ${(simClientType || form.client_type) === c.val ? "active" : ""}`}
+                            style={{ flex: 1, padding: "8px 4px", fontSize: 11 }}
                             onClick={() => {
                               setSimClientType(c.val);
                               handleSimulate(simTeamDelta, simScopeDelta, c.val);
@@ -882,36 +914,88 @@ export default function DeltaDashboard() {
                           </button>
                         ))}
                       </div>
+                      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 10, lineHeight: 1.5 }}>
+                        {(simClientType || form.client_type) === "fixed_bid" && "• Fixed Bid: High vendor margin risk if scope/burn varies, penalizes cost overruns heavily."}
+                        {(simClientType || form.client_type) === "outcome_based" && "• Outcome-Based: Aligns milestone delivery with risk sharing, reducing financial penalty on overruns."}
+                        {(simClientType || form.client_type) === "time_and_material" && "• Time & Material: Passes cost variance to client, reducing direct project insolvency risk."}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Simulation Banner Result */}
+                  {/* Detailed Simulation Outcome Display */}
                   {simResult && (
-                    <div className={`sim-banner ${simResult.delta.is_improvement ? "improved" : "worsened"}`}>
-                      <div className="sim-metric-box">
-                        <div className="sim-metric-label">Baseline vs Simulated Risk</div>
-                        <div className="sim-metric-val">
-                          {simResult.delta.baseline_risk} ➔ {simResult.delta.simulated_risk}
+                    <div className={`sim-banner ${simResult.delta.is_improvement ? "improved" : "worsened"}`} style={{ flexDirection: "column", alignItems: "stretch", gap: 16, marginTop: 16, padding: 20 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--glass-border)", paddingBottom: 12 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+                          Simulation Analysis Summary
+                        </div>
+                        <div style={{ fontSize: 12, color: simResult.delta.is_improvement ? "#10B981" : "#EF4444", fontWeight: 600 }}>
+                          {simResult.delta.risk_changed
+                            ? `Risk Status Changed: ${simResult.delta.baseline_risk} ➔ ${simResult.delta.simulated_risk}`
+                            : `Risk Status Maintained: ${simResult.delta.simulated_risk}`}
                         </div>
                       </div>
 
-                      <div className="sim-metric-box">
-                        <div className="sim-metric-label">Cost Impact</div>
-                        <div className="sim-metric-val">
-                          {currency === "USD"
-                            ? `$${simResult.simulated_prediction.predicted_final_cost_usd.toLocaleString()}`
-                            : `₹${simResult.simulated_prediction.predicted_final_cost_inr.toLocaleString()}`}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
+                        <div className="sim-metric-box">
+                          <div className="sim-metric-label">Simulated Cost</div>
+                          <div className="sim-metric-val" style={{ fontSize: 20 }}>
+                            {currency === "USD"
+                              ? `$${simResult.simulated_prediction.predicted_final_cost_usd.toLocaleString()}`
+                              : `₹${simResult.simulated_prediction.predicted_final_cost_inr.toLocaleString()}`}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                            Baseline: {currency === "USD" ? `$${simResult.baseline_prediction.predicted_final_cost_usd.toLocaleString()}` : `₹${simResult.baseline_prediction.predicted_final_cost_inr.toLocaleString()}`}
+                          </div>
+                        </div>
+
+                        <div className="sim-metric-box">
+                          <div className="sim-metric-label">Net Variance ($\Delta$)</div>
+                          <div className="sim-metric-val" style={{ fontSize: 20, color: simResult.delta.cost_diff_usd <= 0 ? "#10B981" : "#EF4444" }}>
+                            {simResult.delta.cost_diff_usd <= 0 ? "-" : "+"}
+                            {currency === "USD"
+                              ? `$${Math.abs(simResult.delta.cost_diff_usd).toLocaleString()}`
+                              : `₹${Math.abs(simResult.delta.cost_diff_inr).toLocaleString()}`}
+                          </div>
+                          <div style={{ fontSize: 11, color: simResult.delta.cost_diff_usd <= 0 ? "#10B981" : "#EF4444" }}>
+                            {simResult.delta.cost_diff_usd <= 0 ? "↓ Direct Labor / Scope Savings" : "↑ Additional Overhead Cost"}
+                          </div>
+                        </div>
+
+                        <div className="sim-metric-box">
+                          <div className="sim-metric-label">Overrun Shift</div>
+                          <div className="sim-metric-val" style={{ fontSize: 20 }}>
+                            {simResult.simulated_prediction.overrun_percentage > 0 ? `+${simResult.simulated_prediction.overrun_percentage.toFixed(1)}%` : `${simResult.simulated_prediction.overrun_percentage.toFixed(1)}%`}
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                            Shift: {simResult.delta.overrun_diff_pct > 0 ? `+${simResult.delta.overrun_diff_pct.toFixed(1)}%` : `${simResult.delta.overrun_diff_pct.toFixed(1)}%`} from baseline
+                          </div>
+                        </div>
+
+                        <div className="sim-metric-box">
+                          <div className="sim-metric-label">Confidence Score</div>
+                          <div className="sim-metric-val" style={{ fontSize: 20 }}>
+                            {(simResult.simulated_prediction.risk_confidence * 100).toFixed(0)}%
+                          </div>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                            {simResult.delta.confidence_diff >= 0 ? `+${(simResult.delta.confidence_diff * 100).toFixed(1)}%` : `${(simResult.delta.confidence_diff * 100).toFixed(1)}%`} confidence shift
+                          </div>
                         </div>
                       </div>
 
-                      <div className="sim-metric-box">
-                        <div className="sim-metric-label">Net Delta ($)</div>
-                        <span className={`sim-delta-badge ${simResult.delta.cost_diff_usd <= 0 ? "pos" : "neg"}`}>
-                          {simResult.delta.cost_diff_usd <= 0 ? "↓ Savings: " : "↑ Excess: "}
-                          {currency === "USD"
-                            ? `$${Math.abs(simResult.delta.cost_diff_usd).toLocaleString()}`
-                            : `₹${Math.abs(simResult.delta.cost_diff_inr).toLocaleString()}`}
-                        </span>
+                      {/* State Explanation Banner */}
+                      <div style={{ background: "rgba(0,0,0,0.2)", padding: 12, borderRadius: "var(--radius-sm)", fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.6, marginTop: 4 }}>
+                        <strong>📌 State Explanation & Analysis:</strong>{" "}
+                        {simResult.delta.is_improvement ? (
+                          <span>
+                            This simulated scenario reduces projected financial risk by <strong>{currency === "USD" ? `$${Math.abs(simResult.delta.cost_diff_usd).toLocaleString()}` : `₹${Math.abs(simResult.delta.cost_diff_inr).toLocaleString()}`}</strong>.
+                            {simResult.delta.risk_changed && ` The project classification successfully improves from ${simResult.delta.baseline_risk.toUpperCase()} to ${simResult.delta.simulated_risk.toUpperCase()}.`}
+                          </span>
+                        ) : (
+                          <span>
+                            This simulated scenario increases project cost overrun by <strong>{currency === "USD" ? `$${Math.abs(simResult.delta.cost_diff_usd).toLocaleString()}` : `₹${Math.abs(simResult.delta.cost_diff_inr).toLocaleString()}`}</strong> (+{simResult.delta.overrun_diff_pct.toFixed(1)}% overrun shift). Consider counter-balancing with scope reduction or team right-sizing.
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}
