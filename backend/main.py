@@ -9,6 +9,7 @@ Performance-optimized backend with:
 5. Proper async with background SHAP computation
 6. Model metrics endpoint
 7. Lifespan events (replaces deprecated on_event)
+8. RAG knowledge base over PMBOK / IT Governance Standards
 
 Endpoints:
   POST /predict             → Risk class + cost + SHAP factors + RL recommendations
@@ -16,6 +17,7 @@ Endpoints:
   GET  /health              → Health check + model info
   GET  /metrics             → Model training metrics
   GET  /recommend/{idx}     → RL intervention recommendations for sample project
+  POST /rag/query           → Semantic retrieval from PMBOK / IT Governance knowledge base
 """
 
 from typing import Optional, Dict, Any, List
@@ -30,6 +32,10 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+import shap
+import re
+import math
+from collections import Counter
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -50,9 +56,102 @@ _state = {
     "metrics": None,
     "startup_time": None,
     "prediction_count": 0,
+    "rag_knowledge_base": None,
+    "rag_tfidf_index": None,
 }
 
 USD_TO_INR = 83.5
+DATA_DIR = PROJECT_ROOT / "data"
+
+
+# ─── RAG TF-IDF Indexer ─────────────────────────────────────────────────────
+
+def _tokenize(text: str) -> list[str]:
+    """Lowercase, strip punctuation, split into word tokens."""
+    return re.findall(r'[a-z0-9]+', text.lower())
+
+
+def _build_tfidf_index(docs: list[dict]) -> dict:
+    """
+    Build a lightweight TF-IDF index over the knowledge base entries.
+    Each doc dict must have 'content' and 'keywords' fields.
+    Returns index dict with term frequencies and IDF values.
+    """
+    N = len(docs)
+    # Combine content + keywords for each document
+    doc_tokens = []
+    for doc in docs:
+        combined = doc.get("content", "") + " " + " ".join(doc.get("keywords", []))
+        tokens = _tokenize(combined)
+        doc_tokens.append(tokens)
+
+    # Document frequency for each term
+    df = Counter()
+    for tokens in doc_tokens:
+        unique_tokens = set(tokens)
+        for t in unique_tokens:
+            df[t] += 1
+
+    # IDF = log(N / df)
+    idf = {}
+    for term, freq in df.items():
+        idf[term] = math.log((N + 1) / (freq + 1)) + 1.0  # smoothed IDF
+
+    # TF-IDF vectors per doc (sparse dict representation)
+    doc_vectors = []
+    for tokens in doc_tokens:
+        tf = Counter(tokens)
+        total = len(tokens) if tokens else 1
+        vec = {}
+        for term, count in tf.items():
+            vec[term] = (count / total) * idf.get(term, 1.0)
+        # Normalize
+        norm = math.sqrt(sum(v ** 2 for v in vec.values())) or 1.0
+        vec = {k: v / norm for k, v in vec.items()}
+        doc_vectors.append(vec)
+
+    return {"idf": idf, "doc_vectors": doc_vectors}
+
+
+def _rag_retrieve(query: str, top_k: int = 3) -> list[dict]:
+    """
+    Retrieve top-K PMBOK knowledge base entries matching a query.
+    Uses TF-IDF cosine similarity.
+    """
+    kb = _state["rag_knowledge_base"]
+    index = _state["rag_tfidf_index"]
+    if not kb or not index:
+        return []
+
+    query_tokens = _tokenize(query)
+    idf = index["idf"]
+    doc_vectors = index["doc_vectors"]
+
+    # Build query vector
+    tf = Counter(query_tokens)
+    total = len(query_tokens) if query_tokens else 1
+    q_vec = {}
+    for term, count in tf.items():
+        q_vec[term] = (count / total) * idf.get(term, 1.0)
+    q_norm = math.sqrt(sum(v ** 2 for v in q_vec.values())) or 1.0
+    q_vec = {k: v / q_norm for k, v in q_vec.items()}
+
+    # Cosine similarity with each doc
+    scores = []
+    for i, dv in enumerate(doc_vectors):
+        dot = sum(q_vec.get(t, 0.0) * dv.get(t, 0.0) for t in q_vec)
+        scores.append((i, dot))
+
+    scores.sort(key=lambda x: x[1], reverse=True)
+
+    results = []
+    for idx, score in scores[:top_k]:
+        if score > 0.01:  # minimum relevance threshold
+            entry = kb[idx].copy()
+            entry["relevance_score"] = round(score, 4)
+            results.append(entry)
+
+    return results
 
 # ─── Feature Engineering ────────────────────────────────────────────────────
 
@@ -143,6 +242,16 @@ def load_models():
             _state["metrics"] = json.load(f)
         print("  ✓ Metrics loaded")
     
+    # Load RAG knowledge base
+    kb_path = DATA_DIR / "pm_knowledge_base.json"
+    if kb_path.exists():
+        with open(kb_path, encoding="utf-8") as f:
+            _state["rag_knowledge_base"] = json.load(f)
+        _state["rag_tfidf_index"] = _build_tfidf_index(_state["rag_knowledge_base"])
+        print(f"  ✓ RAG knowledge base loaded ({len(_state['rag_knowledge_base'])} entries, TF-IDF indexed)")
+    else:
+        print("  ⚠ RAG knowledge base not found, /rag/query will return empty results")
+
     _state["startup_time"] = time.time()
     print(f"  ✓ All artifacts loaded in {time.time() - t0:.2f}s")
 
@@ -445,6 +554,8 @@ async def health():
         "features": len(_state["feature_columns"]) if _state["feature_columns"] else 0,
         "shap_ready": _state["shap_explainer"] is not None,
         "rl_ready": _state["rl_bandit"] is not None,
+        "rag_ready": _state["rag_knowledge_base"] is not None,
+        "rag_entries": len(_state["rag_knowledge_base"]) if _state["rag_knowledge_base"] else 0,
         "predictions_served": _state["prediction_count"],
         "uptime_seconds": round(uptime, 1),
         "version": "2.0.0",
@@ -612,8 +723,8 @@ class CopilotChatResponse(BaseModel):
     model_used: str
 
 
-def _build_copilot_system_prompt(features: dict, prediction: dict) -> str:
-    """Build a compact, grounded system prompt optimized for small local LLMs."""
+def _build_copilot_system_prompt(features: dict, prediction: dict, query_text: str = "") -> str:
+    """Build a compact, grounded system prompt optimized for small local LLMs, enriched with RAG."""
     risk = prediction.get("risk_class", "unknown")
     confidence = prediction.get("risk_confidence", 0)
     overrun_pct = prediction.get("overrun_percentage", 0)
@@ -635,7 +746,7 @@ def _build_copilot_system_prompt(features: dict, prediction: dict) -> str:
         rec_lines.append(f"- {r.get('action', '')}: {r.get('description', '')} (reduces risk by {red:.0%})")
     recs_text = "\n".join(rec_lines) if rec_lines else "- No recommendations available"
     
-    return f"""You are DELTA Copilot, an AI assistant for IT project risk analysis.
+    base_prompt = f"""You are DELTA Copilot, an AI assistant for IT project risk analysis.
 Answer ONLY using the project data below. Do NOT invent numbers. Be concise (2-3 paragraphs max).
 
 PROJECT FACTS:
@@ -656,7 +767,18 @@ RISK FACTORS:
 RECOMMENDED ACTIONS:
 {recs_text}
 
-RULES: Only cite numbers from above. Reference factor names when explaining risk. If unsure, say so."""
+RULES: Only cite numbers from above. Reference factor names when explaining risk. When citing PMBOK guidelines, always include the source in square brackets e.g. [PMBOK 7th Edition, Section X.Y]. If unsure, say so."""
+
+    # --- RAG: Retrieve relevant PMBOK standards and inject ---
+    rag_context = ""
+    rag_entries = _rag_retrieve(query_text or "", top_k=2)
+    if rag_entries:
+        rag_lines = []
+        for entry in rag_entries:
+            rag_lines.append(f"[{entry['source']}] {entry['title']}: {entry['content']}")
+        rag_context = "\n\nPMBOK / IT GOVERNANCE REFERENCE STANDARDS:\n" + "\n\n".join(rag_lines)
+
+    return base_prompt + rag_context
 
 
 def _fallback_copilot_response(question: str, features: dict, prediction: dict) -> CopilotChatResponse:
@@ -765,7 +887,7 @@ async def _call_ollama_copilot(question: str, features: dict, prediction: dict, 
     """Query local Jarvis / Ollama LLM — runs in thread pool to avoid blocking."""
     import asyncio
 
-    system_prompt = _build_copilot_system_prompt(features, prediction)
+    system_prompt = _build_copilot_system_prompt(features, prediction, query_text=question)
 
     # Keep context tight: system + last 2 exchanges + current question
     messages = [{"role": "system", "content": system_prompt}]
@@ -808,7 +930,7 @@ async def copilot_chat(req: CopilotChatRequest):
             import google.generativeai as genai
             genai.configure(api_key=api_key)
             
-            system_prompt = _build_copilot_system_prompt(req.project_features, req.prediction_result)
+            system_prompt = _build_copilot_system_prompt(req.project_features, req.prediction_result, query_text=req.question)
             
             # Build conversation
             messages = []
@@ -1025,8 +1147,34 @@ async def generate_executive_report(req: ReportRequest):
     )
 
 
+# ─── RAG Query Endpoint ──────────────────────────────────────────────────────
+
+class RAGQueryRequest(BaseModel):
+    query: str = Field(..., description="Natural language query about project governance or PMBOK standards")
+    top_k: int = Field(default=3, ge=1, le=10, description="Number of results to return")
+
+
+class RAGQueryResponse(BaseModel):
+    query: str
+    results: list[dict]
+    total_results: int
+
+
+@app.post("/rag/query", response_model=RAGQueryResponse)
+async def rag_query(req: RAGQueryRequest):
+    """Retrieve relevant PMBOK / IT Governance standards matching a natural language query."""
+    if not _state["rag_knowledge_base"]:
+        raise HTTPException(status_code=503, detail="RAG knowledge base not loaded")
+
+    results = _rag_retrieve(req.query, top_k=req.top_k)
+
+    return RAGQueryResponse(
+        query=req.query,
+        results=results,
+        total_results=len(results),
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
