@@ -156,6 +156,8 @@ export default function DeltaDashboard() {
     "What's driving the cost overrun?",
     "What should I do first?",
     "Tell me about the team composition",
+    "📚 What does PMBOK say about this risk?",
+    "📚 How should I handle attrition per PMBOK?",
   ];
 
   const handleCopilotSend = useCallback(async (question?: string) => {
