@@ -1056,18 +1056,27 @@ export default function DeltaDashboard() {
                         </div>
 
                         {/* Messages Area */}
-                        <div className="copilot-messages" style={{ minHeight: "130px", maxHeight: "220px", background: "rgba(0,0,0,0.25)", borderRadius: "var(--radius-sm)", padding: "12px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                        <div className="copilot-messages" style={{ minHeight: "140px", maxHeight: "240px", background: "rgba(0,0,0,0.3)", borderRadius: "var(--radius-sm)", padding: "12px", border: "1px solid rgba(255,255,255,0.06)", overflowY: "auto" }}>
                           {copilotMessages.length === 0 ? (
                             <div style={{ fontSize: "12.5px", color: "var(--text-muted)", textAlign: "center", padding: "24px 12px", lineHeight: "1.6" }}>
                               💬 Ask DELTA Copilot about this scenario risk, financial variance, or PMBOK recommendations using the quick chips or text box below...
                             </div>
                           ) : (
                             copilotMessages.map((msg, i) => (
-                              <div key={i} className={`copilot-msg ${msg.role}`}>
-                                <div style={{ fontWeight: 600, fontSize: "11px", marginBottom: "3px", opacity: 0.85 }}>
+                              <div key={i} className={`copilot-msg ${msg.role === "user" ? "user" : "assistant"}`}>
+                                <div style={{ fontWeight: 600, fontSize: "11px", marginBottom: "4px", opacity: 0.85 }}>
                                   {msg.role === "user" ? "You" : "🤖 DELTA Copilot"}
                                 </div>
-                                <div style={{ whiteSpace: "pre-wrap", lineHeight: "1.6" }}>{msg.content}</div>
+                                <div>
+                                  {msg.content.split("\n").map((line, j) => (
+                                    <span key={j}>
+                                      {line.split(/\*\*(.*?)\*\*/g).map((part, k) =>
+                                        k % 2 === 1 ? <strong key={k}>{part}</strong> : part
+                                      )}
+                                      {j < msg.content.split("\n").length - 1 && <br />}
+                                    </span>
+                                  ))}
+                                </div>
                               </div>
                             ))
                           )}
@@ -1082,22 +1091,30 @@ export default function DeltaDashboard() {
                         {/* Quick Chips */}
                         <div className="copilot-chips" style={{ borderTop: "none", padding: 0 }}>
                           {QUICK_QUESTIONS.map((q, i) => (
-                            <button key={i} className="copilot-chip" onClick={() => handleCopilotSend(q)}>{q}</button>
+                            <button key={i} className="copilot-chip" type="button" onClick={() => handleCopilotSend(q)}>{q}</button>
                           ))}
                         </div>
 
                         {/* Input Row */}
                         <div className="copilot-input-row" style={{ borderTop: "none", padding: 0 }}>
                           <input
+                            id="embedded-copilot-input"
                             className="copilot-input"
                             placeholder="Ask about this simulation outcome, trade-offs, or PMBOK guidelines..."
                             value={copilotInput}
                             onChange={e => setCopilotInput(e.target.value)}
-                            onKeyDown={e => e.key === "Enter" && !copilotLoading && handleCopilotSend()}
+                            onKeyDown={e => {
+                              if (e.key === "Enter" && !copilotLoading) {
+                                e.preventDefault();
+                                handleCopilotSend();
+                              }
+                            }}
                             disabled={copilotLoading}
+                            autoComplete="off"
                           />
                           <button
                             className="copilot-send"
+                            type="button"
                             onClick={() => handleCopilotSend()}
                             disabled={copilotLoading || !copilotInput.trim()}
                           >
@@ -1325,79 +1342,6 @@ export default function DeltaDashboard() {
                 reportContent
               )}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* AI Copilot FAB + Drawer */}
-      <button
-        className="copilot-fab"
-        onClick={() => setCopilotOpen(!copilotOpen)}
-        title="AI Project Manager Copilot"
-      >
-        {copilotOpen ? "✕" : "🤖"}
-      </button>
-
-      {copilotOpen && (
-        <div className="copilot-drawer">
-          <div className="copilot-header">
-            <div className="copilot-header-title">
-              <span>🤖</span> DELTA Copilot
-            </div>
-            <button className="copilot-close" onClick={() => setCopilotOpen(false)}>✕</button>
-          </div>
-
-          <div className="copilot-messages">
-            {copilotMessages.length === 0 && (
-              <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-muted)", fontSize: "12px" }}>
-                Ask me about any predicted project.
-                {!result && <div style={{ marginTop: 6, fontSize: 11 }}>Run a prediction first to get started.</div>}
-              </div>
-            )}
-            {copilotMessages.map((msg, i) => (
-              <div key={i} className={`copilot-msg ${msg.role === "user" ? "user" : "assistant"}`}>
-                {msg.content.split("\n").map((line, j) => (
-                  <span key={j}>
-                    {line.split(/\*\*(.*?)\*\*/g).map((part, k) =>
-                      k % 2 === 1 ? <strong key={k}>{part}</strong> : part
-                    )}
-                    {j < msg.content.split("\n").length - 1 && <br />}
-                  </span>
-                ))}
-              </div>
-            ))}
-            {copilotLoading && (
-              <div className="copilot-typing">
-                <span /><span /><span />
-              </div>
-            )}
-            <div ref={copilotMessagesEnd} />
-          </div>
-
-          {result && copilotMessages.length === 0 && (
-            <div className="copilot-chips">
-              {QUICK_QUESTIONS.map((q, i) => (
-                <button key={i} className="copilot-chip" onClick={() => handleCopilotSend(q)}>{q}</button>
-              ))}
-            </div>
-          )}
-
-          <div className="copilot-input-row">
-            <input
-              className="copilot-input"
-              placeholder="Ask about this project..."
-              value={copilotInput}
-              onChange={e => setCopilotInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && !copilotLoading && handleCopilotSend()}
-              disabled={copilotLoading}
-            />
-            <button
-              className="copilot-send"
-              onClick={() => handleCopilotSend()}
-              disabled={copilotLoading || !copilotInput.trim()}
-            >
-              Send
-            </button>
           </div>
         </div>
       )}
