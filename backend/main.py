@@ -1175,6 +1175,123 @@ async def rag_query(req: RAGQueryRequest):
     )
 
 
+# ─── Slack Risk Alert Webhook ────────────────────────────────────────────────
+
+class SlackAlertRequest(BaseModel):
+    project_features: ProjectFeatures = Field(..., description="Project input parameters")
+    prediction_result: dict = Field(..., description="Prediction output dictionary")
+    webhook_url: Optional[str] = Field(default=None, description="Override Slack webhook URL")
+
+
+class SlackAlertResponse(BaseModel):
+    status: str  # "sent" or "dry_run"
+    slack_payload: dict
+    message: str
+
+
+def _build_slack_blocks(pf: ProjectFeatures, pr: dict) -> dict:
+    """Build a Slack Block Kit message payload for risk alerts."""
+    from datetime import datetime
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    risk = pr.get("risk_class", "unknown").upper()
+    conf = pr.get("risk_confidence", 0.0) * 100
+    budget_usd = pr.get("budget_planned_usd", 0.0)
+    cost_usd = pr.get("predicted_final_cost_usd", 0.0)
+    overrun_pct = pr.get("overrun_percentage", 0.0)
+    variance_usd = cost_usd - budget_usd
+
+    risk_emoji = "🔴" if risk == "FAILED" else "🟡" if risk == "AT_RISK" else "🟢"
+
+    # SHAP factors
+    shap_lines = []
+    for f in pr.get("top_factors", [])[:3]:
+        name = f.get("feature", "").replace("_", " ").title()
+        arrow = "↑" if f.get("impact") == "increases_risk" else "↓"
+        shap_lines.append(f"• {arrow} *{name}*: {f.get('description', '')}")
+    shap_text = "\n".join(shap_lines) if shap_lines else "• No significant risk drivers identified."
+
+    # RL recommendations
+    rec_lines = []
+    for r in pr.get("recommendations", [])[:2]:
+        red = r.get("expected_risk_reduction", 0.0) * 100
+        rec_lines.append(f"• *{r.get('action', '')}*: {r.get('description', '')} (est. -{red:.0f}% risk)")
+    rec_text = "\n".join(rec_lines) if rec_lines else "• Maintain current oversight."
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {"type": "plain_text", "text": f"{risk_emoji} DELTA Risk Alert — {risk}", "emoji": True}
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Risk Classification:*\n`{risk}` ({conf:.0f}% confidence)"},
+                {"type": "mrkdwn", "text": f"*Industry / Contract:*\n{pf.industry_type} / {pf.client_type.replace('_', ' ').title()}"},
+                {"type": "mrkdwn", "text": f"*Planned Budget:*\n${budget_usd:,.0f} USD"},
+                {"type": "mrkdwn", "text": f"*Predicted Cost:*\n${cost_usd:,.0f} USD (+{overrun_pct:.1f}%)"},
+                {"type": "mrkdwn", "text": f"*Cost Variance:*\n+${variance_usd:,.0f} USD"},
+                {"type": "mrkdwn", "text": f"*Team Size:*\n{pf.team_size} members"},
+            ]
+        },
+        {"type": "divider"},
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*🔍 Top Risk Drivers (SHAP):*\n{shap_text}"}
+        },
+        {
+            "type": "section",
+            "text": {"type": "mrkdwn", "text": f"*💡 Recommended Actions:*\n{rec_text}"}
+        },
+        {"type": "divider"},
+        {
+            "type": "context",
+            "elements": [
+                {"type": "mrkdwn", "text": f"📊 _DELTA AI v2.0 — {now_str}_ | Scope Changes: {pf.scope_change_count} | Attrition: {pf.attrition_events} | ECR: {pf.employee_cost_ratio:.0%}"}
+            ]
+        }
+    ]
+
+    return {"blocks": blocks, "text": f"DELTA Risk Alert: {risk} — ${cost_usd:,.0f} predicted (budget ${budget_usd:,.0f})"}
+
+
+@app.post("/alerts/slack", response_model=SlackAlertResponse)
+async def send_slack_alert(req: SlackAlertRequest):
+    """Send a formatted Slack Block Kit risk alert, or return dry-run preview."""
+    payload = _build_slack_blocks(req.project_features, req.prediction_result)
+
+    webhook_url = req.webhook_url or os.environ.get("SLACK_WEBHOOK_URL")
+
+    if webhook_url:
+        try:
+            import urllib.request
+            http_req = urllib.request.Request(
+                webhook_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(http_req, timeout=10) as resp:
+                resp.read()
+            return SlackAlertResponse(
+                status="sent",
+                slack_payload=payload,
+                message=f"Alert sent to Slack webhook successfully."
+            )
+        except Exception as e:
+            return SlackAlertResponse(
+                status="error",
+                slack_payload=payload,
+                message=f"Failed to send Slack alert: {str(e)}"
+            )
+    else:
+        return SlackAlertResponse(
+            status="dry_run",
+            slack_payload=payload,
+            message="No SLACK_WEBHOOK_URL configured. Showing dry-run preview of the alert payload."
+        )
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
