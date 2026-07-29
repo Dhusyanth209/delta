@@ -147,6 +147,11 @@ export default function DeltaDashboard() {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportCopied, setReportCopied] = useState(false);
 
+  // Slack Alert state
+  const [slackLoading, setSlackLoading] = useState(false);
+  const [slackPreview, setSlackPreview] = useState<any>(null);
+  const [slackStatus, setSlackStatus] = useState<string | null>(null);
+
   useEffect(() => {
     copilotMessagesEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [copilotMessages]);
@@ -250,6 +255,35 @@ export default function DeltaDashboard() {
       setReportLoading(false);
     }
   }, [form, result, simResult]);
+
+  const handleSlackAlert = useCallback(async () => {
+    if (!form || !result) return;
+    setSlackLoading(true);
+    setSlackStatus(null);
+    try {
+      const res = await fetch(`${API_BASE}/alerts/slack`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_features: form,
+          prediction_result: result,
+        }),
+      });
+      if (!res.ok) throw new Error(`Slack error: ${res.status}`);
+      const data = await res.json();
+      setSlackStatus(data.status);
+      if (data.status === "dry_run") {
+        setSlackPreview(data);
+      } else if (data.status === "sent") {
+        setSlackPreview(data);
+      }
+    } catch (err: any) {
+      console.error("Slack alert failed:", err);
+      setSlackStatus("error");
+    } finally {
+      setSlackLoading(false);
+    }
+  }, [form, result]);
 
   const handlePredict = useCallback(async () => {
     setLoading(true);
@@ -696,19 +730,31 @@ export default function DeltaDashboard() {
             <>
               <div className="divider" />
 
-              {/* Action Bar for Executive Reports */}
+              {/* Action Bar for Executive Reports & Slack Alerts */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
                 <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>
                   Project Risk & Overrun Analysis
                 </div>
-                <button
-                  className="sim-btn active"
-                  style={{ padding: "10px 18px", fontSize: 13, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 16px rgba(46, 92, 255, 0.3)" }}
-                  onClick={handleGenerateReport}
-                  disabled={reportLoading}
-                >
-                  <span>📄</span> {reportLoading ? "Generating Report..." : "Export Executive PMO Report"}
-                </button>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    className="sim-btn active"
+                    style={{ padding: "10px 18px", fontSize: 13, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 4px 16px rgba(46, 92, 255, 0.3)" }}
+                    onClick={handleGenerateReport}
+                    disabled={reportLoading}
+                  >
+                    <span>📄</span> {reportLoading ? "Generating..." : "Export PMO Report"}
+                  </button>
+                  {(result.risk_class === "at_risk" || result.risk_class === "failed") && (
+                    <button
+                      className="sim-btn"
+                      style={{ padding: "10px 18px", fontSize: 13, display: "flex", alignItems: "center", gap: 8, background: result.risk_class === "failed" ? "rgba(239, 68, 68, 0.15)" : "rgba(251, 191, 36, 0.15)", border: `1px solid ${result.risk_class === "failed" ? "rgba(239, 68, 68, 0.4)" : "rgba(251, 191, 36, 0.4)"}` }}
+                      onClick={handleSlackAlert}
+                      disabled={slackLoading}
+                    >
+                      <span>🔔</span> {slackLoading ? "Sending..." : "Send Slack Alert"}
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="results-grid">
@@ -1341,6 +1387,75 @@ export default function DeltaDashboard() {
               ) : (
                 reportContent
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Slack Alert Preview Modal */}
+      {slackPreview && (
+        <div className="report-modal-overlay" onClick={() => setSlackPreview(null)}>
+          <div className="report-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560 }}>
+            <div className="report-modal-header">
+              <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", display: "flex", alignItems: "center", gap: 8 }}>
+                <span>🔔</span> Slack Risk Alert {slackPreview.status === "sent" ? "— Sent ✓" : "— Dry Run Preview"}
+              </div>
+              <button className="copilot-close" onClick={() => setSlackPreview(null)}>✕</button>
+            </div>
+
+            <div className="report-modal-body" style={{ padding: "20px 24px" }}>
+              {slackPreview.status === "dry_run" && (
+                <div style={{ background: "rgba(251, 191, 36, 0.1)", border: "1px solid rgba(251, 191, 36, 0.3)", borderRadius: "var(--radius-sm)", padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#FBBF24" }}>
+                  ⚠ No SLACK_WEBHOOK_URL configured. This is a preview of what would be sent.
+                </div>
+              )}
+              {slackPreview.status === "sent" && (
+                <div style={{ background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.3)", borderRadius: "var(--radius-sm)", padding: "10px 14px", marginBottom: 16, fontSize: 12, color: "#10B981" }}>
+                  ✓ Alert delivered to Slack successfully.
+                </div>
+              )}
+
+              {/* Render Slack blocks as a preview card */}
+              <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: "var(--radius-md)", padding: "16px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                {slackPreview.slack_payload?.blocks?.map((block: any, i: number) => {
+                  if (block.type === "header") {
+                    return <div key={i} style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", marginBottom: 12 }}>{block.text?.text}</div>;
+                  }
+                  if (block.type === "divider") {
+                    return <hr key={i} style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "12px 0" }} />;
+                  }
+                  if (block.type === "section" && block.fields) {
+                    return (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px 16px", marginBottom: 10 }}>
+                        {block.fields.map((f: any, j: number) => (
+                          <div key={j} style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                            {f.text.split("\n").map((line: string, k: number) => (
+                              <div key={k} style={k === 0 ? { fontWeight: 700, color: "var(--text-primary)", fontSize: 11, marginBottom: 2 } : {}}>{line.replace(/\*/g, "").replace(/`/g, "")}</div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  }
+                  if (block.type === "section" && block.text) {
+                    return (
+                      <div key={i} style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: 10, whiteSpace: "pre-wrap" }}>
+                        {block.text.text.replace(/\*/g, "").split("\n").map((line: string, j: number) => (
+                          <div key={j}>{line}</div>
+                        ))}
+                      </div>
+                    );
+                  }
+                  if (block.type === "context") {
+                    return (
+                      <div key={i} style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8, fontStyle: "italic" }}>
+                        {block.elements?.[0]?.text?.replace(/_/g, "").replace(/\*/g, "")}
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
             </div>
           </div>
         </div>
