@@ -1032,6 +1032,80 @@ export default function DeltaDashboard() {
                         </div>
                       </div>
 
+                      {/* DELTA Copilot — Embedded Scenario AI Advisor (Placed in designated layout space) */}
+                      <div style={{
+                        background: "rgba(13, 18, 36, 0.85)",
+                        border: "1px solid rgba(46, 92, 255, 0.35)",
+                        borderRadius: "var(--radius-md)",
+                        padding: "16px 18px",
+                        marginTop: "16px",
+                        boxShadow: "0 4px 20px rgba(0, 0, 0, 0.3)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                      }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.08)", paddingBottom: "10px" }}>
+                          <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
+                            <span style={{ fontSize: "16px" }}>🤖</span> DELTA Copilot — Scenario AI Advisor
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <span style={{ fontSize: "11px", color: "#60A5FA", background: "rgba(46, 92, 255, 0.15)", padding: "3px 10px", borderRadius: "12px", border: "1px solid rgba(46, 92, 255, 0.3)", fontWeight: 600 }}>
+                              📚 PMBOK & SHAP Grounded
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Messages Area */}
+                        <div className="copilot-messages" style={{ minHeight: "130px", maxHeight: "220px", background: "rgba(0,0,0,0.25)", borderRadius: "var(--radius-sm)", padding: "12px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                          {copilotMessages.length === 0 ? (
+                            <div style={{ fontSize: "12.5px", color: "var(--text-muted)", textAlign: "center", padding: "24px 12px", lineHeight: "1.6" }}>
+                              💬 Ask DELTA Copilot about this scenario risk, financial variance, or PMBOK recommendations using the quick chips or text box below...
+                            </div>
+                          ) : (
+                            copilotMessages.map((msg, i) => (
+                              <div key={i} className={`copilot-msg ${msg.role}`}>
+                                <div style={{ fontWeight: 600, fontSize: "11px", marginBottom: "3px", opacity: 0.85 }}>
+                                  {msg.role === "user" ? "You" : "🤖 DELTA Copilot"}
+                                </div>
+                                <div style={{ whiteSpace: "pre-wrap", lineHeight: "1.6" }}>{msg.content}</div>
+                              </div>
+                            ))
+                          )}
+                          {copilotLoading && (
+                            <div className="copilot-typing">
+                              <span /><span /><span />
+                            </div>
+                          )}
+                          <div ref={copilotMessagesEnd} />
+                        </div>
+
+                        {/* Quick Chips */}
+                        <div className="copilot-chips" style={{ borderTop: "none", padding: 0 }}>
+                          {QUICK_QUESTIONS.map((q, i) => (
+                            <button key={i} className="copilot-chip" onClick={() => handleCopilotSend(q)}>{q}</button>
+                          ))}
+                        </div>
+
+                        {/* Input Row */}
+                        <div className="copilot-input-row" style={{ borderTop: "none", padding: 0 }}>
+                          <input
+                            className="copilot-input"
+                            placeholder="Ask about this simulation outcome, trade-offs, or PMBOK guidelines..."
+                            value={copilotInput}
+                            onChange={e => setCopilotInput(e.target.value)}
+                            onKeyDown={e => e.key === "Enter" && !copilotLoading && handleCopilotSend()}
+                            disabled={copilotLoading}
+                          />
+                          <button
+                            className="copilot-send"
+                            onClick={() => handleCopilotSend()}
+                            disabled={copilotLoading || !copilotInput.trim()}
+                          >
+                            Send
+                          </button>
+                        </div>
+                      </div>
+
                       {/* Highlighted Analytical Inference Box */}
                       <div style={{
                         background: "rgba(46, 92, 255, 0.08)",
