@@ -152,6 +152,12 @@ export default function DeltaDashboard() {
   const [slackPreview, setSlackPreview] = useState<any>(null);
   const [slackStatus, setSlackStatus] = useState<string | null>(null);
 
+  // Bulk Upload state
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [batchResults, setBatchResults] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     copilotMessagesEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [copilotMessages]);
@@ -284,6 +290,63 @@ export default function DeltaDashboard() {
       setSlackLoading(false);
     }
   }, [form, result]);
+
+  const handleUpload = useCallback(async (file: File) => {
+    setUploadLoading(true);
+    setBatchResults(null);
+    try {
+      const formData = new window.FormData();
+      formData.append("file", file);
+      const res = await fetch(`${API_BASE}/projects/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || `Upload error: ${res.status}`);
+      }
+      const data = await res.json();
+      setBatchResults(data);
+    } catch (err: any) {
+      setError(err.message || "Upload failed");
+    } finally {
+      setUploadLoading(false);
+    }
+  }, []);
+
+  const handleSelectBatchProject = useCallback((proj: any) => {
+    const f = proj.project_features;
+    setForm({
+      industry_type: f.industry_type || "BFSI",
+      team_size: f.team_size || 20,
+      seniority_mix_junior: f.seniority_mix_junior || 0.3,
+      seniority_mix_mid: f.seniority_mix_mid || 0.4,
+      seniority_mix_senior: f.seniority_mix_senior || 0.3,
+      budget_planned_usd: f.budget_planned_usd || 300000,
+      duration_planned_weeks: f.duration_planned_weeks || 20,
+      scope_change_count: f.scope_change_count || 3,
+      client_type: f.client_type || "fixed_bid",
+      employee_cost_ratio: f.employee_cost_ratio || 0.57,
+      attrition_events: f.attrition_events || 1,
+      weekly_burn_rate_variance: f.weekly_burn_rate_variance || 0.1,
+    });
+    setResult({
+      risk_class: proj.risk_class,
+      risk_confidence: proj.risk_confidence,
+      predicted_overrun_ratio: 1 + (proj.overrun_percentage / 100),
+      predicted_final_cost_usd: proj.predicted_final_cost_usd,
+      predicted_final_cost_inr: proj.predicted_final_cost_inr,
+      budget_planned_usd: proj.budget_planned_usd,
+      budget_planned_inr: proj.budget_planned_usd * USD_TO_INR,
+      overrun_percentage: proj.overrun_percentage,
+      top_factors: proj.top_factors || [],
+      class_probabilities: {},
+      recommendations: proj.recommendations || [],
+    });
+    setSimResult(null);
+    setBatchResults(null);
+    setUploadOpen(false);
+  }, []);
 
   const handlePredict = useCallback(async () => {
     setLoading(true);
@@ -501,6 +564,12 @@ export default function DeltaDashboard() {
             >
               {showForm ? "✕ Hide Form" : "✎ Custom Prediction"}
             </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setUploadOpen(!uploadOpen)}
+            >
+              {uploadOpen ? "✕ Hide Upload" : "📤 Upload Projects"}
+            </button>
           </div>
 
           {/* Error */}
@@ -515,6 +584,165 @@ export default function DeltaDashboard() {
               marginBottom: 24,
             }}>
               ⚠ {error}
+            </div>
+          )}
+
+          {/* Bulk Upload Zone */}
+          {uploadOpen && (
+            <div className="form-panel glass" style={{ marginBottom: 24 }}>
+              <div className="panel-header">
+                <div className="panel-icon glass" style={{ background: "rgba(46, 92, 255, 0.15)" }}>
+                  📤
+                </div>
+                <div className="panel-title">Bulk Project Upload</div>
+                <a
+                  href={`${API_BASE}/projects/template`}
+                  download
+                  style={{ fontSize: 12, color: "#60A5FA", textDecoration: "none", marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  📥 Download Template CSV
+                </a>
+              </div>
+
+              <div
+                style={{
+                  border: "2px dashed rgba(46, 92, 255, 0.3)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "32px 24px",
+                  textAlign: "center",
+                  cursor: "pointer",
+                  background: "rgba(46, 92, 255, 0.04)",
+                  transition: "border-color 0.2s, background 0.2s",
+                }}
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "#2E5CFF"; e.currentTarget.style.background = "rgba(46, 92, 255, 0.1)"; }}
+                onDragLeave={(e) => { e.currentTarget.style.borderColor = "rgba(46, 92, 255, 0.3)"; e.currentTarget.style.background = "rgba(46, 92, 255, 0.04)"; }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.style.borderColor = "rgba(46, 92, 255, 0.3)";
+                  e.currentTarget.style.background = "rgba(46, 92, 255, 0.04)";
+                  const f = e.dataTransfer.files[0];
+                  if (f) handleUpload(f);
+                }}
+              >
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,.xlsx"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUpload(f);
+                    e.target.value = "";
+                  }}
+                />
+                {uploadLoading ? (
+                  <div style={{ color: "var(--text-muted)", fontSize: 14 }}>
+                    <span className="loading-spinner" style={{ marginRight: 8 }}></span>
+                    Processing uploaded projects...
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>📂</div>
+                    <div style={{ color: "var(--text-primary)", fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                      Drag & Drop CSV or Excel file here
+                    </div>
+                    <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                      or click to browse — Supports .csv and .xlsx
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Batch Results — Portfolio Summary + Table */}
+          {batchResults && (
+            <div style={{ marginBottom: 24 }}>
+              {/* Portfolio Summary Cards */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+                <div className="sim-metric-box">
+                  <div className="sim-metric-label">Total Projects</div>
+                  <div className="sim-metric-val" style={{ fontSize: 22 }}>{batchResults.total_projects}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{batchResults.successful_predictions} predicted successfully</div>
+                </div>
+                <div className="sim-metric-box">
+                  <div className="sim-metric-label" style={{ color: "#22C55E" }}>🟢 On Track</div>
+                  <div className="sim-metric-val" style={{ fontSize: 22, color: "#22C55E" }}>{batchResults.portfolio_summary?.risk_distribution?.on_track || 0}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>projects on schedule</div>
+                </div>
+                <div className="sim-metric-box">
+                  <div className="sim-metric-label" style={{ color: "#F59E0B" }}>🟡 At Risk</div>
+                  <div className="sim-metric-val" style={{ fontSize: 22, color: "#F59E0B" }}>{batchResults.portfolio_summary?.risk_distribution?.at_risk || 0}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>projects need attention</div>
+                </div>
+                <div className="sim-metric-box">
+                  <div className="sim-metric-label" style={{ color: "#EF4444" }}>🔴 Failed</div>
+                  <div className="sim-metric-val" style={{ fontSize: 22, color: "#EF4444" }}>{batchResults.portfolio_summary?.risk_distribution?.failed || 0}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>projects in danger</div>
+                </div>
+                <div className="sim-metric-box">
+                  <div className="sim-metric-label">Avg Overrun</div>
+                  <div className="sim-metric-val" style={{ fontSize: 22, color: (batchResults.portfolio_summary?.average_overrun_pct || 0) > 0 ? "#F87171" : "#34D399" }}>
+                    {(batchResults.portfolio_summary?.average_overrun_pct || 0) > 0 ? "+" : ""}{(batchResults.portfolio_summary?.average_overrun_pct || 0).toFixed(1)}%
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>portfolio average</div>
+                </div>
+                <div className="sim-metric-box">
+                  <div className="sim-metric-label">Total Cost Variance</div>
+                  <div className="sim-metric-val" style={{ fontSize: 18, color: (batchResults.portfolio_summary?.total_cost_variance_usd || 0) > 0 ? "#F87171" : "#34D399" }}>
+                    {currency === "USD"
+                      ? `${(batchResults.portfolio_summary?.total_cost_variance_usd || 0) > 0 ? "+" : ""}$${Math.abs(batchResults.portfolio_summary?.total_cost_variance_usd || 0).toLocaleString()}`
+                      : `${(batchResults.portfolio_summary?.total_cost_variance_inr || 0) > 0 ? "+" : ""}₹${Math.abs(batchResults.portfolio_summary?.total_cost_variance_inr || 0).toLocaleString()}`}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--text-muted)" }}>portfolio total</div>
+                </div>
+              </div>
+
+              {/* Batch Results Table */}
+              <div className="panel glass" style={{ overflow: "hidden" }}>
+                <div className="panel-header" style={{ padding: "12px 16px" }}>
+                  <div className="panel-title" style={{ fontSize: 13 }}>📊 Batch Prediction Results — Click any row to drill down</div>
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table className="sample-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Industry</th>
+                        <th>Team</th>
+                        <th>Budget</th>
+                        <th>Duration</th>
+                        <th>Contract</th>
+                        <th>Risk</th>
+                        <th>Overrun</th>
+                        <th>Confidence</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {batchResults.predictions?.filter((p: any) => p.status === "success").map((p: any, i: number) => (
+                        <tr key={i} onClick={() => handleSelectBatchProject(p)} style={{ cursor: "pointer" }}>
+                          <td style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.row_index + 1}</td>
+                          <td>{p.project_features?.industry_type || "—"}</td>
+                          <td>{p.project_features?.team_size || "—"}</td>
+                          <td>{formatCurrency(p.budget_planned_usd || 0, currency)}</td>
+                          <td>{p.project_features?.duration_planned_weeks || "—"}w</td>
+                          <td style={{ fontSize: 11 }}>{(p.project_features?.client_type || "—").replace(/_/g, " ")}</td>
+                          <td>
+                            <span className={`risk-badge risk-${p.risk_class}`} style={{ fontSize: 10, padding: "3px 10px" }}>
+                              {riskLabel(p.risk_class)}
+                            </span>
+                          </td>
+                          <td style={{ color: p.overrun_percentage > 0 ? "#F87171" : "#34D399", fontWeight: 600, fontSize: 12 }}>
+                            {p.overrun_percentage > 0 ? "+" : ""}{p.overrun_percentage.toFixed(1)}%
+                          </td>
+                          <td style={{ fontSize: 12 }}>{(p.risk_confidence * 100).toFixed(0)}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           )}
 

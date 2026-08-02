@@ -22,6 +22,7 @@ Endpoints:
 
 from typing import Optional, Dict, Any, List
 import json
+import io
 import os
 import time
 import hashlib
@@ -36,7 +37,8 @@ import shap
 import re
 import math
 from collections import Counter
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -1290,6 +1292,170 @@ async def send_slack_alert(req: SlackAlertRequest):
             slack_payload=payload,
             message="No SLACK_WEBHOOK_URL configured. Showing dry-run preview of the alert payload."
         )
+
+
+# ─── Bulk Project Upload & Batch Prediction ──────────────────────────────────
+
+REQUIRED_UPLOAD_COLUMNS = [
+    "industry_type", "team_size", "seniority_mix_junior", "seniority_mix_mid",
+    "seniority_mix_senior", "budget_planned_usd", "duration_planned_weeks",
+    "scope_change_count", "client_type", "employee_cost_ratio",
+    "attrition_events", "weekly_burn_rate_variance"
+]
+
+
+def _predict_single_row(raw: dict) -> dict:
+    """Run prediction pipeline on a single project dict. Returns result dict."""
+    try:
+        df_encoded = engineer_features_from_raw(raw)
+        
+        risk_proba = _state["classifier"].predict_proba(df_encoded)[0]
+        risk_class_idx = int(np.argmax(risk_proba))
+        risk_class = _state["label_encoder"].inverse_transform([risk_class_idx])[0]
+        risk_confidence = float(risk_proba[risk_class_idx])
+        
+        overrun_ratio = float(_state["regressor"].predict(df_encoded)[0])
+        budget = float(raw.get("budget_planned_usd", 0))
+        predicted_cost_usd = budget * overrun_ratio
+        overrun_pct = (overrun_ratio - 1.0) * 100
+        
+        top_factors = compute_shap_factors(df_encoded)
+        recommendations = compute_recommendations(df_encoded)
+        
+        return {
+            "status": "success",
+            "risk_class": risk_class,
+            "risk_confidence": round(risk_confidence, 4),
+            "overrun_percentage": round(overrun_pct, 2),
+            "predicted_final_cost_usd": round(predicted_cost_usd, 2),
+            "predicted_final_cost_inr": round(predicted_cost_usd * USD_TO_INR, 2),
+            "budget_planned_usd": round(budget, 2),
+            "top_factors": [f.model_dump() for f in top_factors],
+            "recommendations": [r.model_dump() for r in recommendations],
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
+@app.post("/projects/upload")
+async def upload_projects(file: UploadFile = File(...)):
+    """Upload CSV/XLSX file and run batch predictions on all projects."""
+    if _state["classifier"] is None:
+        raise HTTPException(status_code=503, detail="Models not loaded")
+    
+    filename = file.filename or ""
+    contents = await file.read()
+    
+    try:
+        if filename.endswith(".xlsx"):
+            df = pd.read_excel(io.BytesIO(contents), engine="openpyxl")
+        elif filename.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(contents))
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file format. Upload .csv or .xlsx")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
+    
+    # Normalize column names
+    df.columns = [c.strip().lower().replace(" ", "_") for c in df.columns]
+    
+    # Validate required columns
+    missing = [c for c in REQUIRED_UPLOAD_COLUMNS if c not in df.columns]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Missing required columns: {', '.join(missing)}. Required: {', '.join(REQUIRED_UPLOAD_COLUMNS)}"
+        )
+    
+    # Run predictions
+    results = []
+    for idx, row in df.iterrows():
+        raw = {col: row[col] for col in REQUIRED_UPLOAD_COLUMNS}
+        # Type coerce
+        raw["team_size"] = int(raw["team_size"])
+        raw["duration_planned_weeks"] = int(raw["duration_planned_weeks"])
+        raw["scope_change_count"] = int(raw["scope_change_count"])
+        raw["attrition_events"] = int(raw["attrition_events"])
+        raw["budget_planned_usd"] = float(raw["budget_planned_usd"])
+        raw["seniority_mix_junior"] = float(raw["seniority_mix_junior"])
+        raw["seniority_mix_mid"] = float(raw["seniority_mix_mid"])
+        raw["seniority_mix_senior"] = float(raw["seniority_mix_senior"])
+        raw["employee_cost_ratio"] = float(raw["employee_cost_ratio"])
+        raw["weekly_burn_rate_variance"] = float(raw["weekly_burn_rate_variance"])
+        raw["industry_type"] = str(raw["industry_type"])
+        raw["client_type"] = str(raw["client_type"])
+        
+        pred = _predict_single_row(raw)
+        pred["row_index"] = int(idx)
+        pred["project_features"] = raw
+        results.append(pred)
+    
+    # Portfolio summary
+    successful = [r for r in results if r.get("status") == "success"]
+    risk_counts = {"on_track": 0, "at_risk": 0, "failed": 0}
+    total_overrun = 0.0
+    total_variance_usd = 0.0
+    highest_risk_project = None
+    highest_overrun = -999
+    
+    for r in successful:
+        rc = r.get("risk_class", "unknown")
+        if rc in risk_counts:
+            risk_counts[rc] += 1
+        op = r.get("overrun_percentage", 0)
+        total_overrun += op
+        total_variance_usd += r.get("predicted_final_cost_usd", 0) - r.get("budget_planned_usd", 0)
+        if op > highest_overrun:
+            highest_overrun = op
+            highest_risk_project = r.get("row_index", 0)
+    
+    avg_overrun = total_overrun / len(successful) if successful else 0
+    
+    return {
+        "total_projects": len(results),
+        "successful_predictions": len(successful),
+        "failed_predictions": len(results) - len(successful),
+        "portfolio_summary": {
+            "risk_distribution": risk_counts,
+            "average_overrun_pct": round(avg_overrun, 2),
+            "total_cost_variance_usd": round(total_variance_usd, 2),
+            "total_cost_variance_inr": round(total_variance_usd * USD_TO_INR, 2),
+            "highest_risk_project_index": highest_risk_project,
+            "highest_overrun_pct": round(highest_overrun, 2),
+        },
+        "predictions": results,
+    }
+
+
+@app.get("/projects/template")
+async def download_template():
+    """Download a CSV template with correct column headers and example rows."""
+    template_data = {
+        "industry_type": ["BFSI", "Healthcare"],
+        "team_size": [25, 15],
+        "seniority_mix_junior": [0.30, 0.40],
+        "seniority_mix_mid": [0.45, 0.35],
+        "seniority_mix_senior": [0.25, 0.25],
+        "budget_planned_usd": [500000, 250000],
+        "duration_planned_weeks": [24, 16],
+        "scope_change_count": [4, 2],
+        "client_type": ["fixed_bid", "time_and_material"],
+        "employee_cost_ratio": [0.58, 0.52],
+        "attrition_events": [2, 0],
+        "weekly_burn_rate_variance": [0.12, 0.08],
+    }
+    df = pd.DataFrame(template_data)
+    buf = io.StringIO()
+    df.to_csv(buf, index=False)
+    buf.seek(0)
+    
+    return StreamingResponse(
+        io.BytesIO(buf.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=delta_project_template.csv"}
+    )
 
 
 if __name__ == "__main__":
