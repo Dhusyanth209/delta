@@ -158,6 +158,12 @@ export default function DeltaDashboard() {
   const [batchResults, setBatchResults] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Heatmap state
+  const [heatmapData, setHeatmapData] = useState<any>(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const [heatmapTopN, setHeatmapTopN] = useState(8);
+  const [hoveredCell, setHoveredCell] = useState<{row: number; col: number} | null>(null);
+
   useEffect(() => {
     copilotMessagesEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [copilotMessages]);
@@ -742,6 +748,203 @@ export default function DeltaDashboard() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+
+              {/* Heatmap Section */}
+              <div className="panel glass" style={{ overflow: "hidden", marginTop: 16 }}>
+                <div className="panel-header" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div className="panel-title" style={{ fontSize: 13 }}>🗺️ Risk Factor Heatmap</div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <button
+                      className="sim-btn"
+                      style={{ padding: "5px 12px", fontSize: 11 }}
+                      onClick={() => {
+                        const newN = heatmapTopN === 8 ? 20 : 8;
+                        setHeatmapTopN(newN);
+                        // Refetch with new top_n
+                        if (batchResults?.predictions) {
+                          setHeatmapLoading(true);
+                          const projectFeatures = batchResults.predictions
+                            .filter((p: any) => p.status === "success")
+                            .map((p: any) => p.project_features);
+                          fetch(`${API_BASE}/heatmap/data?top_n=${newN}`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(projectFeatures),
+                          }).then(r => r.json()).then(data => {
+                            setHeatmapData(data);
+                            setHeatmapLoading(false);
+                          }).catch(() => setHeatmapLoading(false));
+                        }
+                      }}
+                    >
+                      {heatmapTopN === 8 ? "Show All Factors" : "Top 8 Only"}
+                    </button>
+                    {!heatmapData && (
+                      <button
+                        className="sim-btn active"
+                        style={{ padding: "5px 14px", fontSize: 11 }}
+                        disabled={heatmapLoading}
+                        onClick={() => {
+                          if (!batchResults?.predictions) return;
+                          setHeatmapLoading(true);
+                          const projectFeatures = batchResults.predictions
+                            .filter((p: any) => p.status === "success")
+                            .map((p: any) => p.project_features);
+                          fetch(`${API_BASE}/heatmap/data?top_n=${heatmapTopN}`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(projectFeatures),
+                          }).then(r => r.json()).then(data => {
+                            setHeatmapData(data);
+                            setHeatmapLoading(false);
+                          }).catch(() => setHeatmapLoading(false));
+                        }}
+                      >
+                        {heatmapLoading ? "Loading..." : "Generate Heatmap"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {heatmapLoading && (
+                  <div style={{ padding: 32, textAlign: "center", color: "var(--text-muted)" }}>
+                    <span className="loading-spinner" style={{ marginRight: 8 }}></span>
+                    Computing SHAP values across all projects...
+                  </div>
+                )}
+
+                {heatmapData && !heatmapLoading && (
+                  <div style={{ padding: "0 16px 16px", overflowX: "auto" }}>
+                    {/* Color Legend */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, fontSize: 11, color: "var(--text-muted)" }}>
+                      <span>Reduces Risk</span>
+                      <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", width: 160 }}>
+                        <div style={{ flex: 1, background: "#22C55E" }} />
+                        <div style={{ flex: 1, background: "#6BD67E" }} />
+                        <div style={{ flex: 1, background: "#A3E635" }} />
+                        <div style={{ flex: 1, background: "#FACC15" }} />
+                        <div style={{ flex: 1, background: "#FB923C" }} />
+                        <div style={{ flex: 1, background: "#EF4444" }} />
+                        <div style={{ flex: 1, background: "#DC2626" }} />
+                      </div>
+                      <span>Increases Risk</span>
+                      <span style={{ marginLeft: 16 }}>Showing {heatmapData.columns?.length || 0} of {heatmapData.total_features_available || 0} features</span>
+                    </div>
+
+                    {/* Heatmap Grid */}
+                    <div style={{ display: "grid", gridTemplateColumns: `140px repeat(${heatmapData.columns?.length || 1}, minmax(80px, 1fr))`, gap: 2, fontSize: 11 }}>
+                      {/* Header row */}
+                      <div style={{ padding: "8px 6px", fontWeight: 700, color: "var(--text-muted)", fontSize: 10 }}>PROJECT</div>
+                      {heatmapData.columns?.map((col: any, ci: number) => (
+                        <div key={ci} style={{ padding: "8px 4px", fontWeight: 600, color: "var(--text-secondary)", fontSize: 9, textAlign: "center", lineHeight: 1.3, wordBreak: "break-word" }}>
+                          {col.label}
+                        </div>
+                      ))}
+
+                      {/* Data rows */}
+                      {heatmapData.projects?.map((proj: any, ri: number) => (
+                        <>
+                          {/* Row header */}
+                          <div key={`rh-${ri}`} style={{ padding: "6px", display: "flex", alignItems: "center", gap: 6, cursor: "pointer", borderRadius: 4, background: "rgba(255,255,255,0.02)" }}
+                            onClick={() => {
+                              const bp = batchResults?.predictions?.filter((p: any) => p.status === "success")?.[ri];
+                              if (bp) handleSelectBatchProject(bp);
+                            }}
+                          >
+                            <span className={`risk-badge risk-${proj.risk_class}`} style={{ fontSize: 8, padding: "2px 6px" }}>
+                              {riskLabel(proj.risk_class).charAt(0)}
+                            </span>
+                            <span style={{ color: "var(--text-primary)", fontSize: 10, fontWeight: 500 }}>
+                              #{proj.index + 1} {proj.industry}
+                            </span>
+                          </div>
+
+                          {/* Cells */}
+                          {heatmapData.matrix?.[ri]?.map((cell: any, ci: number) => {
+                            const n = cell.normalized; // -1 to +1
+                            const absN = Math.abs(n);
+                            let bg: string;
+                            if (n > 0) {
+                              // Red spectrum for risk-increasing
+                              const r = Math.round(239 + (220 - 239) * (1 - absN));
+                              const g = Math.round(68 + (180 - 68) * (1 - absN));
+                              const b = Math.round(68 + (180 - 68) * (1 - absN));
+                              bg = `rgba(${r}, ${g}, ${b}, ${0.15 + absN * 0.65})`;
+                            } else {
+                              // Green spectrum for risk-reducing
+                              const r = Math.round(34 + (180 - 34) * (1 - absN));
+                              const g = Math.round(197 + (210 - 197) * (1 - absN));
+                              const b = Math.round(94 + (180 - 94) * (1 - absN));
+                              bg = `rgba(${r}, ${g}, ${b}, ${0.15 + absN * 0.65})`;
+                            }
+                            const isHovered = hoveredCell?.row === ri && hoveredCell?.col === ci;
+                            return (
+                              <div
+                                key={`c-${ri}-${ci}`}
+                                style={{
+                                  background: bg,
+                                  borderRadius: 4,
+                                  padding: "6px 4px",
+                                  textAlign: "center",
+                                  cursor: "default",
+                                  position: "relative",
+                                  transition: "transform 0.15s, box-shadow 0.15s",
+                                  transform: isHovered ? "scale(1.08)" : "scale(1)",
+                                  boxShadow: isHovered ? "0 4px 16px rgba(0,0,0,0.4)" : "none",
+                                  zIndex: isHovered ? 10 : 1,
+                                }}
+                                onMouseEnter={() => setHoveredCell({ row: ri, col: ci })}
+                                onMouseLeave={() => setHoveredCell(null)}
+                              >
+                                <div style={{ fontSize: 11, fontWeight: 600, color: n > 0 ? "#FCA5A5" : "#86EFAC" }}>
+                                  {n > 0 ? "↑" : "↓"} {(absN * 100).toFixed(0)}%
+                                </div>
+                                {/* Tooltip */}
+                                {isHovered && (
+                                  <div style={{
+                                    position: "absolute",
+                                    bottom: "calc(100% + 8px)",
+                                    left: "50%",
+                                    transform: "translateX(-50%)",
+                                    background: "rgba(15, 15, 30, 0.95)",
+                                    border: "1px solid rgba(255,255,255,0.15)",
+                                    borderRadius: 8,
+                                    padding: "10px 14px",
+                                    minWidth: 180,
+                                    zIndex: 100,
+                                    boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+                                    fontSize: 11,
+                                    whiteSpace: "nowrap",
+                                  }}>
+                                    <div style={{ fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>
+                                      {heatmapData.columns[ci]?.label}
+                                    </div>
+                                    <div style={{ color: n > 0 ? "#FCA5A5" : "#86EFAC", marginBottom: 2 }}>
+                                      {cell.direction === "increases_risk" ? "⬆ Increases Risk" : "⬇ Reduces Risk"}
+                                    </div>
+                                    <div style={{ color: "var(--text-muted)" }}>
+                                      SHAP: {cell.raw_shap.toFixed(4)} | Intensity: {(absN * 100).toFixed(1)}%
+                                    </div>
+                                    <div style={{ color: "var(--text-muted)", marginTop: 4 }}>
+                                      Project: #{heatmapData.projects[ri]?.index + 1} {heatmapData.projects[ri]?.industry} ({riskLabel(heatmapData.projects[ri]?.risk_class)})
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!heatmapData && !heatmapLoading && (
+                  <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
+                    Click "Generate Heatmap" to visualize SHAP risk factors across all projects
+                  </div>
+                )}
               </div>
             </div>
           )}

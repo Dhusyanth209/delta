@@ -1458,6 +1458,144 @@ async def download_template():
     )
 
 
+# ─── Risk Heatmap Data ──────────────────────────────────────────────────────
+
+FEATURE_DISPLAY_NAMES = {
+    "scope_change_count": "Scope Changes",
+    "employee_cost_ratio": "Employee Cost Ratio",
+    "attrition_events": "Attrition Events",
+    "weekly_burn_rate_variance": "Burn Rate Variance",
+    "team_size": "Team Size",
+    "budget_planned_usd": "Budget (USD)",
+    "duration_planned_weeks": "Duration (Weeks)",
+    "seniority_mix_junior": "Junior Mix",
+    "seniority_mix_mid": "Mid Mix",
+    "seniority_mix_senior": "Senior Mix",
+    "scope_fixed_bid_pressure": "Scope-FixedBid Pressure",
+    "attrition_cost_burden": "Attrition Cost Burden",
+    "budget_per_person_week": "Budget/Person/Week",
+    "junior_heavy": "Junior Heavy",
+    "burn_instability": "Burn Instability",
+    "ecr_above_baseline": "ECR Above Baseline",
+    "scope_intensity": "Scope Intensity",
+    "attrition_rate": "Attrition Rate",
+    "client_type_fixed_bid": "Fixed Bid Contract",
+    "client_type_outcome_based": "Outcome Based Contract",
+    "client_type_time_and_material": "T&M Contract",
+}
+
+
+def _compute_all_shap_values(features_df: pd.DataFrame) -> dict:
+    """Compute full SHAP vector for a single project row. Returns {feature: signed_value}."""
+    explainer = _state["shap_explainer"]
+    if explainer is None:
+        return {}
+    try:
+        shap_values = explainer.shap_values(features_df)
+        if isinstance(shap_values, np.ndarray) and shap_values.ndim == 3:
+            signed = np.mean(shap_values[0], axis=1)
+        elif isinstance(shap_values, list):
+            signed = np.mean([sv[0] for sv in shap_values], axis=0)
+        else:
+            signed = shap_values[0]
+
+        result = {}
+        for i, feat in enumerate(_state["feature_columns"]):
+            result[feat] = float(signed[i])
+        return result
+    except Exception:
+        return {}
+
+
+@app.post("/heatmap/data")
+async def heatmap_data(projects: list[dict], top_n: int = 8):
+    """Compute SHAP heatmap matrix for a list of projects."""
+    if _state["classifier"] is None:
+        raise HTTPException(status_code=503, detail="Models not loaded")
+
+    rows = []
+    all_shap_maps = []
+
+    for idx, proj_raw in enumerate(projects):
+        try:
+            df_encoded = engineer_features_from_raw(proj_raw)
+
+            # Risk prediction
+            risk_proba = _state["classifier"].predict_proba(df_encoded)[0]
+            risk_class_idx = int(np.argmax(risk_proba))
+            risk_class = _state["label_encoder"].inverse_transform([risk_class_idx])[0]
+            risk_confidence = float(risk_proba[risk_class_idx])
+
+            overrun_ratio = float(_state["regressor"].predict(df_encoded)[0])
+            overrun_pct = (overrun_ratio - 1.0) * 100
+
+            # Full SHAP values
+            shap_map = _compute_all_shap_values(df_encoded)
+            all_shap_maps.append(shap_map)
+
+            rows.append({
+                "index": idx,
+                "industry": str(proj_raw.get("industry_type", "Unknown")),
+                "team_size": int(proj_raw.get("team_size", 0)),
+                "budget_usd": float(proj_raw.get("budget_planned_usd", 0)),
+                "risk_class": risk_class,
+                "risk_confidence": round(risk_confidence, 4),
+                "overrun_pct": round(overrun_pct, 2),
+            })
+        except Exception:
+            continue
+
+    if not rows:
+        raise HTTPException(status_code=400, detail="No valid projects to analyze")
+
+    # Find top N most impactful features across all projects
+    feature_importance = {}
+    for sm in all_shap_maps:
+        for feat, val in sm.items():
+            feature_importance[feat] = feature_importance.get(feat, 0) + abs(val)
+
+    sorted_features = sorted(feature_importance.keys(), key=lambda f: feature_importance[f], reverse=True)
+    top_features = sorted_features[:top_n]
+
+    # Find global max magnitude for normalization
+    global_max = 0.0
+    for sm in all_shap_maps:
+        for feat in top_features:
+            global_max = max(global_max, abs(sm.get(feat, 0)))
+    global_max = global_max if global_max > 0 else 1.0
+
+    # Build matrix
+    matrix = []
+    for i, sm in enumerate(all_shap_maps):
+        cells = []
+        for feat in top_features:
+            raw_val = sm.get(feat, 0)
+            normalized = raw_val / global_max  # -1.0 to +1.0
+            cells.append({
+                "feature": feat,
+                "raw_shap": round(raw_val, 6),
+                "normalized": round(normalized, 4),
+                "direction": "increases_risk" if raw_val > 0 else "reduces_risk",
+            })
+        matrix.append(cells)
+
+    # Feature column metadata
+    columns = []
+    for feat in top_features:
+        columns.append({
+            "key": feat,
+            "label": FEATURE_DISPLAY_NAMES.get(feat, feat.replace("_", " ").title()),
+        })
+
+    return {
+        "projects": rows,
+        "columns": columns,
+        "matrix": matrix,
+        "top_n": top_n,
+        "total_features_available": len(sorted_features),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
