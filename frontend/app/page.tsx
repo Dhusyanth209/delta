@@ -164,6 +164,25 @@ export default function DeltaDashboard() {
   const [heatmapTopN, setHeatmapTopN] = useState(8);
   const [hoveredCell, setHoveredCell] = useState<{row: number; col: number} | null>(null);
 
+  // Theme state
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  // Initialize theme from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem("delta-theme") as "dark" | "light" | null;
+    if (saved) {
+      setTheme(saved);
+      document.documentElement.setAttribute("data-theme", saved);
+    }
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("delta-theme", next);
+  }, [theme]);
+
   useEffect(() => {
     copilotMessagesEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [copilotMessages]);
@@ -466,6 +485,10 @@ export default function DeltaDashboard() {
                 INR
               </button>
             </div>
+            <label className="theme-toggle-label" onClick={toggleTheme}>
+              {theme === "dark" ? "🌙" : "☀️"}
+              <div className="theme-toggle" />
+            </label>
             <div className="header-badge glass">
               <span className="pulse"></span>
               Model Active
