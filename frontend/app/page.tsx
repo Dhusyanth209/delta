@@ -1175,6 +1175,36 @@ export default function DeltaDashboard() {
                   >
                     <span>📄</span> {reportLoading ? "Generating..." : "Export PMO Report"}
                   </button>
+                  <button
+                    className="sim-btn"
+                    style={{ padding: "10px 18px", fontSize: 13, display: "flex", alignItems: "center", gap: 8, background: "rgba(46, 92, 255, 0.08)", border: "1px solid rgba(46, 92, 255, 0.25)" }}
+                    onClick={async () => {
+                      if (!form || !result) return;
+                      try {
+                        const res = await fetch(`${API_BASE}/report/pdf`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            project_features: form,
+                            prediction_result: result,
+                            simulation_result: simResult,
+                          }),
+                        });
+                        if (!res.ok) throw new Error("PDF generation failed");
+                        const blob = await res.blob();
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = "DELTA_Risk_Report.pdf";
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                      } catch (err) {
+                        console.error("PDF download failed:", err);
+                      }
+                    }}
+                  >
+                    <span>📥</span> Download PDF
+                  </button>
                   {(result.risk_class === "at_risk" || result.risk_class === "failed") && (
                     <button
                       className="sim-btn"
