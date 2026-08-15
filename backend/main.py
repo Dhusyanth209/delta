@@ -1458,6 +1458,160 @@ async def download_template():
     )
 
 
+# ─── PDF Report Export ───────────────────────────────────────────────────────
+
+def _generate_pdf_report(features: dict, prediction: dict) -> bytes:
+    """Generate a branded PDF risk report using ReportLab."""
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+    from datetime import datetime
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20*mm, bottomMargin=20*mm, leftMargin=20*mm, rightMargin=20*mm)
+    styles = getSampleStyleSheet()
+
+    # Custom styles
+    title_style = ParagraphStyle('DeltaTitle', parent=styles['Title'], fontSize=22, textColor=colors.HexColor('#2E5CFF'), spaceAfter=6)
+    subtitle_style = ParagraphStyle('DeltaSub', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#94A3B8'), spaceAfter=12)
+    heading_style = ParagraphStyle('DeltaH2', parent=styles['Heading2'], fontSize=14, textColor=colors.HexColor('#E2E8F0'), spaceBefore=16, spaceAfter=8)
+    body_style = ParagraphStyle('DeltaBody', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#CBD5E1'), leading=14)
+    bold_style = ParagraphStyle('DeltaBold', parent=body_style, fontName='Helvetica-Bold', textColor=colors.HexColor('#F1F5F9'))
+
+    elements = []
+    now_str = datetime.now().strftime("%B %d, %Y at %H:%M")
+
+    # Header
+    elements.append(Paragraph("DELTA AI — Risk Analysis Report", title_style))
+    elements.append(Paragraph(f"Generated: {now_str} | DELTA Copilot v2.0", subtitle_style))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#334155'), spaceAfter=12))
+
+    # Risk Classification
+    risk = prediction.get("risk_class", "unknown").upper()
+    conf = prediction.get("risk_confidence", 0) * 100
+    risk_color = '#EF4444' if risk == 'FAILED' else '#F59E0B' if risk == 'AT_RISK' else '#22C55E'
+    elements.append(Paragraph("Risk Classification", heading_style))
+    elements.append(Paragraph(f'<font color="{risk_color}" size="16"><b>{risk}</b></font> — {conf:.0f}% confidence', body_style))
+    elements.append(Spacer(1, 8))
+
+    # Financial Summary Table
+    elements.append(Paragraph("Financial Summary", heading_style))
+    budget = prediction.get("budget_planned_usd", 0)
+    cost = prediction.get("predicted_final_cost_usd", 0)
+    overrun = prediction.get("overrun_percentage", 0)
+    variance = cost - budget
+
+    fin_data = [
+        ["Metric", "Value"],
+        ["Planned Budget (USD)", f"${budget:,.0f}"],
+        ["Predicted Final Cost (USD)", f"${cost:,.0f}"],
+        ["Cost Variance (USD)", f"${variance:+,.0f}"],
+        ["Overrun Percentage", f"{overrun:+.1f}%"],
+        ["Industry", str(features.get("industry_type", "N/A"))],
+        ["Team Size", str(features.get("team_size", "N/A"))],
+        ["Contract Type", str(features.get("client_type", "N/A")).replace("_", " ").title()],
+        ["Duration (Weeks)", str(features.get("duration_planned_weeks", "N/A"))],
+    ]
+
+    fin_table = Table(fin_data, colWidths=[200, 280])
+    fin_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E293B')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#CBD5E1')),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#0F172A')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(fin_table)
+    elements.append(Spacer(1, 8))
+
+    # Top Risk Factors
+    top_factors = prediction.get("top_factors", [])
+    if top_factors:
+        elements.append(Paragraph("Top Risk Drivers (SHAP Analysis)", heading_style))
+        factor_data = [["Factor", "Impact", "Description"]]
+        for f in top_factors[:5]:
+            name = f.get("feature", "").replace("_", " ").title()
+            impact = "↑ Increases Risk" if f.get("impact") == "increases_risk" else "↓ Reduces Risk"
+            desc = f.get("description", "")
+            factor_data.append([name, impact, desc[:60]])
+
+        factor_table = Table(factor_data, colWidths=[140, 100, 240])
+        factor_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E293B')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#CBD5E1')),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#0F172A')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        elements.append(factor_table)
+        elements.append(Spacer(1, 8))
+
+    # Recommendations
+    recs = prediction.get("recommendations", [])
+    if recs:
+        elements.append(Paragraph("Recommended Actions", heading_style))
+        rec_data = [["Action", "Description", "Est. Risk Reduction"]]
+        for r in recs[:3]:
+            red = r.get("expected_risk_reduction", 0) * 100
+            rec_data.append([r.get("action", ""), r.get("description", "")[:50], f"-{red:.0f}%"])
+
+        rec_table = Table(rec_data, colWidths=[120, 240, 120])
+        rec_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E293B')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#CBD5E1')),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#0F172A')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#334155')),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        elements.append(rec_table)
+
+    # Footer
+    elements.append(Spacer(1, 20))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#334155'), spaceAfter=8))
+    elements.append(Paragraph("This report was auto-generated by DELTA AI v2.0 — IT Project Risk Intelligence Platform", 
+                              ParagraphStyle('Footer', parent=body_style, fontSize=8, textColor=colors.HexColor('#64748B'))))
+
+    doc.build(elements)
+    return buf.getvalue()
+
+
+@app.post("/report/pdf")
+async def generate_pdf_report(req: ReportRequest):
+    """Generate a downloadable PDF risk analysis report."""
+    if _state["classifier"] is None:
+        raise HTTPException(status_code=503, detail="Models not loaded")
+
+    features = req.project_features.model_dump()
+    prediction = req.prediction_result
+
+    pdf_bytes = _generate_pdf_report(features, prediction)
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=DELTA_Risk_Report.pdf"}
+    )
+
+
 # ─── Risk Heatmap Data ──────────────────────────────────────────────────────
 
 FEATURE_DISPLAY_NAMES = {
