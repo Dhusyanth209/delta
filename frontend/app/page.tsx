@@ -167,6 +167,10 @@ export default function DeltaDashboard() {
   // Theme state
   const [theme, setTheme] = useState<"dark" | "light">("dark");
 
+  // Compare state
+  const [compareList, setCompareList] = useState<number[]>([]);
+  const [compareOpen, setCompareOpen] = useState(false);
+
   // Initialize theme from localStorage
   useEffect(() => {
     const saved = localStorage.getItem("delta-theme") as "dark" | "light" | null;
@@ -730,13 +734,25 @@ export default function DeltaDashboard() {
 
               {/* Batch Results Table */}
               <div className="panel glass" style={{ overflow: "hidden" }}>
-                <div className="panel-header" style={{ padding: "12px 16px" }}>
+                <div className="panel-header" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div className="panel-title" style={{ fontSize: 13 }}>📊 Batch Prediction Results — Click any row to drill down</div>
+                  {compareList.length >= 2 && (
+                    <button
+                      className="sim-btn active"
+                      style={{ padding: "5px 14px", fontSize: 11 }}
+                      onClick={() => setCompareOpen(!compareOpen)}
+                    >
+                      {compareOpen ? "✕ Close Compare" : `📊 Compare ${compareList.length} Projects`}
+                    </button>
+                  )}
                 </div>
                 <div style={{ overflowX: "auto" }}>
                   <table className="sample-table">
                     <thead>
                       <tr>
+                        <th style={{ width: 36 }}>
+                          <span style={{ fontSize: 9, color: "var(--text-muted)" }}>SEL</span>
+                        </th>
                         <th>#</th>
                         <th>Industry</th>
                         <th>Team</th>
@@ -750,28 +766,151 @@ export default function DeltaDashboard() {
                     </thead>
                     <tbody>
                       {batchResults.predictions?.filter((p: any) => p.status === "success").map((p: any, i: number) => (
-                        <tr key={i} onClick={() => handleSelectBatchProject(p)} style={{ cursor: "pointer" }}>
-                          <td style={{ fontSize: 11, color: "var(--text-muted)" }}>{p.row_index + 1}</td>
-                          <td>{p.project_features?.industry_type || "—"}</td>
-                          <td>{p.project_features?.team_size || "—"}</td>
-                          <td>{formatCurrency(p.budget_planned_usd || 0, currency)}</td>
-                          <td>{p.project_features?.duration_planned_weeks || "—"}w</td>
-                          <td style={{ fontSize: 11 }}>{(p.project_features?.client_type || "—").replace(/_/g, " ")}</td>
-                          <td>
+                        <tr key={i} style={{ cursor: "pointer", background: compareList.includes(i) ? "rgba(46, 92, 255, 0.08)" : undefined }}>
+                          <td onClick={(e) => { e.stopPropagation(); setCompareList(prev => prev.includes(i) ? prev.filter(x => x !== i) : prev.length >= 3 ? prev : [...prev, i]); }}>
+                            <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${compareList.includes(i) ? '#2E5CFF' : 'var(--glass-border)'}`, background: compareList.includes(i) ? '#2E5CFF' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.15s' }}>
+                              {compareList.includes(i) && <span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span>}
+                            </div>
+                          </td>
+                          <td style={{ fontSize: 11, color: "var(--text-muted)" }} onClick={() => handleSelectBatchProject(p)}>{p.row_index + 1}</td>
+                          <td onClick={() => handleSelectBatchProject(p)}>{p.project_features?.industry_type || "—"}</td>
+                          <td onClick={() => handleSelectBatchProject(p)}>{p.project_features?.team_size || "—"}</td>
+                          <td onClick={() => handleSelectBatchProject(p)}>{formatCurrency(p.budget_planned_usd || 0, currency)}</td>
+                          <td onClick={() => handleSelectBatchProject(p)}>{p.project_features?.duration_planned_weeks || "—"}w</td>
+                          <td style={{ fontSize: 11 }} onClick={() => handleSelectBatchProject(p)}>{(p.project_features?.client_type || "—").replace(/_/g, " ")}</td>
+                          <td onClick={() => handleSelectBatchProject(p)}>
                             <span className={`risk-badge risk-${p.risk_class}`} style={{ fontSize: 10, padding: "3px 10px" }}>
                               {riskLabel(p.risk_class)}
                             </span>
                           </td>
-                          <td style={{ color: p.overrun_percentage > 0 ? "#F87171" : "#34D399", fontWeight: 600, fontSize: 12 }}>
+                          <td style={{ color: p.overrun_percentage > 0 ? "#F87171" : "#34D399", fontWeight: 600, fontSize: 12 }} onClick={() => handleSelectBatchProject(p)}>
                             {p.overrun_percentage > 0 ? "+" : ""}{p.overrun_percentage.toFixed(1)}%
                           </td>
-                          <td style={{ fontSize: 12 }}>{(p.risk_confidence * 100).toFixed(0)}%</td>
+                          <td style={{ fontSize: 12 }} onClick={() => handleSelectBatchProject(p)}>{(p.risk_confidence * 100).toFixed(0)}%</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               </div>
+
+              {/* Comparison Panel */}
+              {compareOpen && compareList.length >= 2 && (() => {
+                const successProjs = batchResults.predictions?.filter((p: any) => p.status === "success") || [];
+                const selected = compareList.map(i => successProjs[i]).filter(Boolean);
+                if (selected.length < 2) return null;
+
+                // Find best/worst for each metric
+                const overruns = selected.map((p: any) => p.overrun_percentage);
+                const confidences = selected.map((p: any) => p.risk_confidence);
+                const costs = selected.map((p: any) => p.predicted_final_cost_usd);
+                const bestOverrun = Math.min(...overruns);
+                const worstOverrun = Math.max(...overruns);
+                const bestConf = Math.max(...confidences);
+
+                const riskRank: Record<string, number> = { on_track: 0, at_risk: 1, failed: 2 };
+
+                const metrics = [
+                  { label: "Risk Level", key: "risk", render: (p: any) => riskLabel(p.risk_class), color: (p: any) => riskColor(p.risk_class) },
+                  { label: "Confidence", key: "conf", render: (p: any) => `${(p.risk_confidence * 100).toFixed(0)}%` },
+                  { label: "Overrun %", key: "overrun", render: (p: any) => `${p.overrun_percentage > 0 ? "+" : ""}${p.overrun_percentage.toFixed(1)}%`, color: (p: any) => p.overrun_percentage > 0 ? "#F87171" : "#34D399" },
+                  { label: "Budget", key: "budget", render: (p: any) => formatCurrency(p.budget_planned_usd || 0, currency) },
+                  { label: "Predicted Cost", key: "cost", render: (p: any) => formatCurrency(p.predicted_final_cost_usd || 0, currency) },
+                  { label: "Industry", key: "industry", render: (p: any) => p.project_features?.industry_type || "—" },
+                  { label: "Team Size", key: "team", render: (p: any) => p.project_features?.team_size || "—" },
+                  { label: "Contract", key: "contract", render: (p: any) => (p.project_features?.client_type || "—").replace(/_/g, " ") },
+                ];
+
+                return (
+                  <div className="panel glass" style={{ overflow: "hidden", marginTop: 16 }}>
+                    <div className="panel-header" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div className="panel-title" style={{ fontSize: 13 }}>📊 Project Comparison — {selected.length} projects</div>
+                      <button className="sim-btn" style={{ padding: "4px 10px", fontSize: 10 }} onClick={() => { setCompareList([]); setCompareOpen(false); }}>Clear</button>
+                    </div>
+                    <div style={{ padding: "0 16px 16px", overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: "left", padding: "10px 12px", color: "var(--text-muted)", fontSize: 10, fontWeight: 600, borderBottom: "1px solid var(--glass-border)" }}>METRIC</th>
+                            {selected.map((p: any, i: number) => (
+                              <th key={i} style={{ textAlign: "center", padding: "10px 12px", borderBottom: "1px solid var(--glass-border)", minWidth: 140 }}>
+                                <span className={`risk-badge risk-${p.risk_class}`} style={{ fontSize: 9, padding: "2px 8px", marginRight: 6 }}>{riskLabel(p.risk_class).charAt(0)}</span>
+                                <span style={{ color: "var(--text-primary)", fontWeight: 600, fontSize: 11 }}>Project #{p.row_index + 1}</span>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {metrics.map((m, mi) => (
+                            <tr key={mi}>
+                              <td style={{ padding: "8px 12px", color: "var(--text-secondary)", fontWeight: 500, fontSize: 11, borderBottom: "1px solid var(--glass-border)" }}>{m.label}</td>
+                              {selected.map((p: any, pi: number) => {
+                                const val = m.render(p);
+                                let cellBg = "transparent";
+                                let indicator = "";
+                                // Diff highlights for overrun
+                                if (m.key === "overrun") {
+                                  if (p.overrun_percentage === bestOverrun && bestOverrun !== worstOverrun) { cellBg = "rgba(34, 197, 94, 0.08)"; indicator = " 🏆"; }
+                                  if (p.overrun_percentage === worstOverrun && bestOverrun !== worstOverrun) { cellBg = "rgba(239, 68, 68, 0.08)"; indicator = " ⚠"; }
+                                }
+                                if (m.key === "risk") {
+                                  const ranks = selected.map((s: any) => riskRank[s.risk_class] ?? 1);
+                                  const bestRank = Math.min(...ranks);
+                                  const worstRank = Math.max(...ranks);
+                                  if ((riskRank[p.risk_class] ?? 1) === bestRank && bestRank !== worstRank) { cellBg = "rgba(34, 197, 94, 0.08)"; indicator = " 🏆"; }
+                                  if ((riskRank[p.risk_class] ?? 1) === worstRank && bestRank !== worstRank) { cellBg = "rgba(239, 68, 68, 0.08)"; indicator = " ⚠"; }
+                                }
+                                return (
+                                  <td key={pi} style={{ textAlign: "center", padding: "8px 12px", fontWeight: 600, color: m.color ? m.color(p) : "var(--text-primary)", borderBottom: "1px solid var(--glass-border)", background: cellBg, transition: "background 0.2s" }}>
+                                    {val}{indicator}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                          {/* Top SHAP factors row */}
+                          <tr>
+                            <td style={{ padding: "10px 12px", color: "var(--text-secondary)", fontWeight: 500, fontSize: 11, verticalAlign: "top" }}>Top Risk Factors</td>
+                            {selected.map((p: any, pi: number) => (
+                              <td key={pi} style={{ padding: "8px 12px", verticalAlign: "top" }}>
+                                {(p.top_factors || []).slice(0, 3).map((f: any, fi: number) => (
+                                  <div key={fi} style={{ marginBottom: 6 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, marginBottom: 2 }}>
+                                      <span style={{ color: f.impact === "increases_risk" ? "#FCA5A5" : "#86EFAC" }}>{f.impact === "increases_risk" ? "↑" : "↓"}</span>
+                                      <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>{f.feature?.replace(/_/g, " ")}</span>
+                                    </div>
+                                    <div style={{ height: 4, borderRadius: 2, background: "var(--glass-border)", overflow: "hidden" }}>
+                                      <div style={{ height: "100%", width: `${Math.min(f.magnitude * 200, 100)}%`, borderRadius: 2, background: f.impact === "increases_risk" ? "#EF4444" : "#22C55E", transition: "width 0.5s" }} />
+                                    </div>
+                                  </div>
+                                ))}
+                              </td>
+                            ))}
+                          </tr>
+                          {/* Recommendations row */}
+                          <tr>
+                            <td style={{ padding: "10px 12px", color: "var(--text-secondary)", fontWeight: 500, fontSize: 11, verticalAlign: "top" }}>Top Action</td>
+                            {selected.map((p: any, pi: number) => {
+                              const rec = p.recommendations?.[0];
+                              return (
+                                <td key={pi} style={{ padding: "8px 12px", fontSize: 10, color: "var(--text-secondary)", verticalAlign: "top" }}>
+                                  {rec ? (
+                                    <div>
+                                      <div style={{ fontWeight: 600, color: "var(--text-primary)", marginBottom: 2 }}>{rec.action}</div>
+                                      <div>{rec.description?.slice(0, 50)}</div>
+                                      <div style={{ color: "#34D399", marginTop: 2 }}>-{(rec.expected_risk_reduction * 100).toFixed(0)}% risk</div>
+                                    </div>
+                                  ) : <span style={{ color: "var(--text-muted)" }}>—</span>}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Heatmap Section */}
               <div className="panel glass" style={{ overflow: "hidden", marginTop: 16 }}>
