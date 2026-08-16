@@ -171,6 +171,10 @@ export default function DeltaDashboard() {
   const [compareList, setCompareList] = useState<number[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
 
+  // Landing state
+  const [showLanding, setShowLanding] = useState(true);
+  const [landingFading, setLandingFading] = useState(false);
+
   // Initialize theme from localStorage
   useEffect(() => {
     const saved = localStorage.getItem("delta-theme") as "dark" | "light" | null;
@@ -463,7 +467,87 @@ export default function DeltaDashboard() {
   };
 
   return (
-    <>
+    <div className="app">
+      {/* Landing Page Overlay */}
+      {showLanding && (
+        <div className={`landing-overlay ${landingFading ? 'fadeout' : ''}`}>
+          {/* Floating Orbs */}
+          <div className="landing-orb landing-orb-1" />
+          <div className="landing-orb landing-orb-2" />
+          <div className="landing-orb landing-orb-3" />
+
+          <div className="landing-content">
+            <div className="landing-logo">Δ</div>
+
+            <h1 className="landing-headline">
+              Predict Project Risk<br /><em>Before It's Too Late</em>
+            </h1>
+
+            <p className="landing-sub">
+              Employee costs rose <strong>206%</strong> while revenue grew only <strong>185%</strong> over a decade.
+              Late detection of delivery risk means problems compound before intervention.
+              DELTA uses AI to give you early warning.
+            </p>
+
+            <button
+              className="landing-cta"
+              onClick={() => {
+                setLandingFading(true);
+                setTimeout(() => setShowLanding(false), 500);
+              }}
+            >
+              Launch Dashboard <span style={{ fontSize: 20 }}>→</span>
+            </button>
+
+            <div className="landing-features">
+              <div className="landing-feature-card">
+                <div className="landing-feature-icon">🧠</div>
+                <div className="landing-feature-title">AI Copilot</div>
+                <div className="landing-feature-desc">Ask questions about any project's risk factors in plain English</div>
+              </div>
+              <div className="landing-feature-card">
+                <div className="landing-feature-icon">📊</div>
+                <div className="landing-feature-title">SHAP Explainability</div>
+                <div className="landing-feature-desc">See exactly why a project is flagged as at-risk or failed</div>
+              </div>
+              <div className="landing-feature-card">
+                <div className="landing-feature-icon">🔮</div>
+                <div className="landing-feature-title">What-If Simulator</div>
+                <div className="landing-feature-desc">Test hiring, scope, and budget scenarios before deciding</div>
+              </div>
+            </div>
+
+            <div className="landing-stats">
+              <div className="landing-stat">
+                <div className="landing-stat-val">950</div>
+                <div className="landing-stat-label">Projects Trained</div>
+              </div>
+              <div className="landing-stat">
+                <div className="landing-stat-val">71.6%</div>
+                <div className="landing-stat-label">Accuracy</div>
+              </div>
+              <div className="landing-stat">
+                <div className="landing-stat-val">12</div>
+                <div className="landing-stat-label">Risk Factors</div>
+              </div>
+              <div className="landing-stat">
+                <div className="landing-stat-val">29</div>
+                <div className="landing-stat-label">Engineered Features</div>
+              </div>
+            </div>
+
+            <div className="landing-tech">
+              <span className="landing-tech-pill">XGBoost</span>
+              <span className="landing-tech-pill">SHAP</span>
+              <span className="landing-tech-pill">FastAPI</span>
+              <span className="landing-tech-pill">Next.js</span>
+              <span className="landing-tech-pill">ReportLab</span>
+              <span className="landing-tech-pill">Docker</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="header">
         <div className="container header-content">
@@ -2083,6 +2167,6 @@ export default function DeltaDashboard() {
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
