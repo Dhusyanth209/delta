@@ -1294,6 +1294,227 @@ async def send_slack_alert(req: SlackAlertRequest):
         )
 
 
+# ─── Email Risk Alert ────────────────────────────────────────────────────────
+
+class EmailAlertRequest(BaseModel):
+    recipient_email: str = Field(..., description="Recipient email address")
+    project_features: ProjectFeatures = Field(..., description="Project input parameters")
+    prediction_result: dict = Field(..., description="Prediction output dictionary")
+    smtp_host: Optional[str] = Field(default=None, description="Optional SMTP server host")
+    smtp_port: Optional[int] = Field(default=None, description="Optional SMTP server port")
+    smtp_user: Optional[str] = Field(default=None, description="Optional SMTP username")
+    smtp_password: Optional[str] = Field(default=None, description="Optional SMTP password")
+
+
+class EmailAlertResponse(BaseModel):
+    status: str  # "sent" or "dry_run" or "error"
+    subject: str
+    html_preview: str
+    recipient: str
+    message: str
+
+
+def _build_email_html(pf: ProjectFeatures, pr: dict) -> tuple[str, str, str]:
+    """Generate subject, plain text and HTML content for executive email alert."""
+    from datetime import datetime
+    now_str = datetime.now().strftime("%B %d, %Y %H:%M UTC")
+
+    risk = pr.get("risk_class", "unknown").upper()
+    conf = pr.get("risk_confidence", 0.0) * 100
+    budget_usd = pr.get("budget_planned_usd", 0.0)
+    cost_usd = pr.get("predicted_final_cost_usd", 0.0)
+    overrun_pct = pr.get("overrun_percentage", 0.0)
+    variance_usd = cost_usd - budget_usd
+
+    risk_color = "#EF4444" if risk == "FAILED" else "#F59E0B" if risk == "AT_RISK" else "#22C55E"
+    risk_emoji = "🚨" if risk == "FAILED" else "⚠️" if risk == "AT_RISK" else "✅"
+
+    subject = f"[DELTA AI {risk_emoji} {risk}] Project Delivery Risk Alert — {pf.industry_type} (${budget_usd:,.0f} Budget)"
+
+    # SHAP factors
+    shap_rows = ""
+    shap_plain = ""
+    for f in pr.get("top_factors", [])[:4]:
+        name = f.get("feature", "").replace("_", " ").title()
+        impact = f.get("impact", "")
+        desc = f.get("description", "")
+        impact_label = "↑ Increases Risk" if impact == "increases_risk" else "↓ Reduces Risk"
+        color = "#EF4444" if impact == "increases_risk" else "#22C55E"
+        shap_rows += f"""<tr>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #334155; color: #F1F5F9; font-weight: 600;">{name}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #334155; color: {color}; font-weight: 600;">{impact_label}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #334155; color: #94A3B8;">{desc}</td>
+        </tr>"""
+        shap_plain += f"- {name}: {impact_label} ({desc})\n"
+
+    # Recommendations
+    rec_rows = ""
+    rec_plain = ""
+    for r in pr.get("recommendations", [])[:3]:
+        act = r.get("action", "")
+        desc = r.get("description", "")
+        red = r.get("expected_risk_reduction", 0.0) * 100
+        rec_rows += f"""<tr>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #334155; color: #38BDF8; font-weight: 600;">{act}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #334155; color: #94A3B8;">{desc}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #334155; color: #34D399; font-weight: 600; text-align: right;">-{red:.0f}% Risk</td>
+        </tr>"""
+        rec_plain += f"- {act}: {desc} (Est. -{red:.0f}% risk)\n"
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #0A0E1A; color: #E2E8F0; margin: 0; padding: 24px;">
+  <div style="max-width: 640px; margin: 0 auto; background: #0F172A; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+    
+    <!-- Header -->
+    <div style="background: linear-gradient(135deg, #2E5CFF, #7B3FE4); padding: 24px 32px; color: #FFFFFF;">
+      <h1 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em;">Δ DELTA Delivery Risk Intelligence</h1>
+      <p style="margin: 6px 0 0 0; font-size: 13px; opacity: 0.9;">Automated PMO Risk & Cost Early-Warning Alert</p>
+    </div>
+
+    <div style="padding: 32px;">
+      <!-- Risk Status Banner -->
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid #334155; border-left: 6px solid {risk_color}; border-radius: 8px; padding: 18px 20px; margin-bottom: 24px;">
+        <div style="font-size: 12px; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700;">Prediction Outcome</div>
+        <div style="font-size: 24px; font-weight: 800; color: {risk_color}; margin: 4px 0;">{risk}</div>
+        <div style="font-size: 13px; color: #CBD5E1;">Model Confidence: <strong>{conf:.0f}%</strong> | Predicted Cost Overrun: <strong>+{overrun_pct:.1f}%</strong></div>
+      </div>
+
+      <!-- Financial Metrics Table -->
+      <h2 style="font-size: 15px; color: #F8FAFC; margin: 0 0 12px 0; font-weight: 700; border-bottom: 1px solid #334155; padding-bottom: 6px;">Financial Impact Overview</h2>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 24px;">
+        <tr>
+          <td style="padding: 8px 12px; color: #94A3B8; border-bottom: 1px solid #1E293B;">Planned Budget:</td>
+          <td style="padding: 8px 12px; color: #F1F5F9; font-weight: 600; text-align: right; border-bottom: 1px solid #1E293B;">${budget_usd:,.0f} USD</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; color: #94A3B8; border-bottom: 1px solid #1E293B;">Predicted Final Cost:</td>
+          <td style="padding: 8px 12px; color: #F87171; font-weight: 700; text-align: right; border-bottom: 1px solid #1E293B;">${cost_usd:,.0f} USD</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; color: #94A3B8; border-bottom: 1px solid #1E293B;">Projected Cost Variance:</td>
+          <td style="padding: 8px 12px; color: #F87171; font-weight: 700; text-align: right; border-bottom: 1px solid #1E293B;">+${variance_usd:,.0f} USD (+{overrun_pct:.1f}%)</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; color: #94A3B8; border-bottom: 1px solid #1E293B;">Industry / Contract:</td>
+          <td style="padding: 8px 12px; color: #CBD5E1; text-align: right; border-bottom: 1px solid #1E293B;">{pf.industry_type} / {pf.client_type.replace('_', ' ').title()}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 12px; color: #94A3B8;">Team / Duration:</td>
+          <td style="padding: 8px 12px; color: #CBD5E1; text-align: right;">{pf.team_size} members / {pf.duration_planned_weeks} weeks</td>
+        </tr>
+      </table>
+
+      <!-- Top SHAP Risk Drivers -->
+      <h2 style="font-size: 15px; color: #F8FAFC; margin: 0 0 12px 0; font-weight: 700; border-bottom: 1px solid #334155; padding-bottom: 6px;">Top Risk Drivers (SHAP Analysis)</h2>
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 24px;">
+        <thead>
+          <tr style="background: #1E293B; text-align: left; color: #94A3B8; font-size: 11px;">
+            <th style="padding: 8px 12px;">FACTOR</th>
+            <th style="padding: 8px 12px;">IMPACT</th>
+            <th style="padding: 8px 12px;">DETAILS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shap_rows}
+        </tbody>
+      </table>
+
+      <!-- Recommended Actions -->
+      <h2 style="font-size: 15px; color: #F8FAFC; margin: 0 0 12px 0; font-weight: 700; border-bottom: 1px solid #334155; padding-bottom: 6px;">Recommended Mitigations (RL Multi-Armed Bandit)</h2>
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 24px;">
+        <thead>
+          <tr style="background: #1E293B; text-align: left; color: #94A3B8; font-size: 11px;">
+            <th style="padding: 8px 12px;">ACTION</th>
+            <th style="padding: 8px 12px;">DESCRIPTION</th>
+            <th style="padding: 8px 12px; text-align: right;">BENEFIT</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rec_rows}
+        </tbody>
+      </table>
+
+      <!-- Footer -->
+      <div style="border-top: 1px solid #334155; padding-top: 16px; font-size: 11px; color: #64748B; text-align: center;">
+        Sent automatically by DELTA 2.0 AI Risk Prediction Engine • Generated at {now_str}
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+
+    plain = f"""DELTA Delivery Risk Alert: {risk} ({conf:.0f}% confidence)
+Planned Budget: ${budget_usd:,.0f} USD
+Predicted Cost: ${cost_usd:,.0f} USD (+{overrun_pct:.1f}%)
+Cost Variance: +${variance_usd:,.0f} USD
+
+Top Risk Factors:
+{shap_plain}
+Recommended Mitigations:
+{rec_plain}
+Generated: {now_str} by DELTA AI v2.0
+"""
+
+    return subject, plain, html
+
+
+@app.post("/alerts/email", response_model=EmailAlertResponse)
+async def send_email_alert(req: EmailAlertRequest):
+    """Send an executive HTML email risk alert via SMTP or return dry-run preview."""
+    subject, plain_text, html_content = _build_email_html(req.project_features, req.prediction_result)
+
+    smtp_host = req.smtp_host or os.environ.get("SMTP_HOST")
+    smtp_port = req.smtp_port or int(os.environ.get("SMTP_PORT", 587))
+    smtp_user = req.smtp_user or os.environ.get("SMTP_USER")
+    smtp_password = req.smtp_password or os.environ.get("SMTP_PASSWORD")
+    sender_email = os.environ.get("SMTP_FROM", smtp_user or "delta-alerts@pm-system.ai")
+
+    if smtp_host and smtp_user and smtp_password:
+        try:
+            import smtplib
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = sender_email
+            msg["To"] = req.recipient_email
+
+            msg.attach(MIMEText(plain_text, "plain"))
+            msg.attach(MIMEText(html_content, "html"))
+
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_password)
+                server.sendmail(sender_email, req.recipient_email, msg.as_string())
+
+            return EmailAlertResponse(
+                status="sent",
+                subject=subject,
+                html_preview=html_content,
+                recipient=req.recipient_email,
+                message=f"Executive email alert sent to {req.recipient_email} successfully."
+            )
+        except Exception as e:
+            return EmailAlertResponse(
+                status="error",
+                subject=subject,
+                html_preview=html_content,
+                recipient=req.recipient_email,
+                message=f"Failed to send email via SMTP: {str(e)}"
+            )
+    else:
+        return EmailAlertResponse(
+            status="dry_run",
+            subject=subject,
+            html_preview=html_content,
+            recipient=req.recipient_email,
+            message=f"No SMTP server credentials configured. Returning dry-run preview for {req.recipient_email}."
+        )
+
+
 # ─── Bulk Project Upload & Batch Prediction ──────────────────────────────────
 
 REQUIRED_UPLOAD_COLUMNS = [

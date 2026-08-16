@@ -1,247 +1,216 @@
-# Δ DELTA — Project Cost-Overrun & Delivery-Risk Prediction
+# Δ DELTA 2.0 — Project Cost-Overrun & Delivery-Risk Intelligence Platform
 
-> Early-warning AI system that predicts IT project failures before they become expensive.
+> **AI-powered early-warning decision support system that predicts IT project delivery failures, explains risk drivers with SHAP, recommends interventions via RL, and empowers PMOs with AI Copilot & Scenario Simulation.**
 
-## Problem Statement
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Next.js 15+](https://img.shields.io/badge/Next.js-15+-000000.svg?logo=next.js&logoColor=white)](https://nextjs.org)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](https://www.docker.com)
 
-IT service delivery firms lose millions annually to project cost overruns and missed deadlines. The core problem: by the time a project is visibly failing, the damage is already compounding — attrition spikes, scope balloons, and fixed-bid contracts lock in losses. **DELTA predicts project risk early** and recommends interventions, giving PMO teams time to act.
+---
 
-## Why This Matters — The Margin Squeeze
+## 📌 Problem Statement
 
-Based on analysis from *"The Indian IT Services Sector at a Crossroads"* (industry research paper):
+IT service delivery firms lose millions annually to project cost overruns and missed deadlines. The core problem: by the time a project is visibly failing, the damage is already compounding — attrition spikes, scope balloons, and fixed-bid contracts lock in losses. **DELTA predicts project risk early** and recommends precision interventions, giving PMO teams actionable early warning before margins collapse.
 
-| Metric | Value | Impact |
-|--------|-------|--------|
-| Employee costs rose | **206%** over a decade | While revenue grew only 185% |
-| Employee-cost-to-revenue ratio | **57-60%** (industry avg) | And rising — squeezing margins |
-| Annualized attrition | **~13-14%** | Each replacement costs 25-30% premium (lateral hire) |
-| Shift to outcome-based pricing | Accelerating | Overruns are now the vendor's loss, not the client's |
+---
 
-Mid-cap IT firms (not TCS/Infosys, who build in-house AI) lack predictive tools to catch at-risk projects early. DELTA targets this gap.
+## 💡 Why This Matters — The Margin Squeeze
 
-## Architecture
+Calibrated against industry analysis from *"The Indian IT Services Sector at a Crossroads"*:
+
+| Metric | Value | Business Impact |
+|---|---|---|
+| **Employee Costs Growth** | **+206%** over a decade | Outpacing revenue growth (+185%) |
+| **Employee Cost Ratio (ECR)** | **57–60%** industry baseline | Continuing margin compression |
+| **Annualized Attrition** | **~13–14%** | 25–30% lateral hiring cost premium |
+| **Contract Dynamics** | Fixed-bid & Outcome-based | Cost overruns absorbed by vendor |
+
+Mid-cap IT firms lack the in-house AI infrastructure that Tier-1 firms build. DELTA bridges this gap with an end-to-end intelligence suite.
+
+---
+
+## 🏗️ Architecture & Feature Ecosystem
 
 ```mermaid
-graph LR
-    A[Synthetic Dataset<br/>950 projects] --> B[Feature Engineering<br/>8 derived features]
-    B --> C[XGBoost Classifier<br/>max_depth=2, regularized]
-    B --> D[XGBoost Regressor<br/>cost prediction]
-    C --> E[SHAP Explainer<br/>per-prediction factors]
-    C --> F[RL Contextual Bandit<br/>Thompson Sampling]
-    E --> G[FastAPI Backend<br/>cached, async]
-    F --> G
-    D --> G
-    G --> H[Next.js Dashboard<br/>glass-panel UI]
+graph TD
+    A[Synthetic + Research-Calibrated Data<br/>950 projects] --> B[Feature Engineering Engine<br/>29 Features & Ratios]
+    B --> C[XGBoost Classifier<br/>Risk Level: on_track / at_risk / failed]
+    B --> D[XGBoost Regressor<br/>Final Cost & Overrun %]
+    C --> E[SHAP Explainer<br/>TreeExplainer Attribution]
+    C --> F[RL Contextual Bandit<br/>Thompson Sampling Recommendations]
+    
+    G[FastAPI Backend Engine] --> C
+    G --> D
+    G --> E
+    G --> F
+    
+    G --> H[AI Copilot<br/>Gemini 2.0 + PMBOK RAG]
+    G --> I[What-If Simulator<br/>Real-Time Elastic Tweaks]
+    G --> J[Risk Heatmap Matrix<br/>SHAP Normalization]
+    G --> K[PDF & PMO Exporter<br/>ReportLab Engine]
+    G --> L[Alert Integrations<br/>Slack Webhooks + SMTP Email]
+    
+    G --> M[Next.js 15+ Frontend<br/>Interactive Glassmorphism Dashboard]
 ```
 
-## Methodology
+---
 
-### Dataset
+## 🚀 Complete Feature Suite (Stages 0 – 13)
 
-- **950 synthetic records** with 12 raw features, calibrated against industry-aggregate research parameters (not row-level real data)
-- Distribution targets: 37% on_track / 40% at_risk / 23% failed
-- Employee cost ratio mean: 0.581 (matching the industry average of 0.57-0.60)
-- **Validated for plausibility** against the Desharnais dataset (81 real projects) from the PROMISE Software Engineering Repository — see [sanity check](docs/real_data_sanity_check.md)
+DELTA has evolved across 13 major feature stages into an enterprise-grade platform:
 
-### Secondary Real-Data Validation
+### 1. 🔮 Dual-Model Risk & Cost Engine
+- **Classifier**: XGBoost regularized classifier predicting `on_track`, `at_risk`, `failed` (71.6% accuracy, 75.5% 5-fold CV).
+- **Regressor**: XGBoost continuous cost overrun ratio predictor ($R^2 = 0.787$, MAE = 0.043).
+- **Dual Currency**: Dynamic switching between **USD ($)** and **INR (₹)**.
 
-To validate the underlying modeling approach on real software engineering data, we ran two secondary validation tests using the PROMISE repository. Note that these are separate tasks with smaller feature sets than the primary synthetic classifier. See [Real Data Validation](docs/real_data_validation.md) for full metrics and learning curves.
+### 2. 🧠 AI Copilot with PMBOK Knowledge Base (RAG)
+- Grounded conversational AI assistant powered by **Gemini 2.0 Flash** with a zero-hallucination fallback engine.
+- Integrated **PMBOK 7th Edition Knowledge Base** indexed with TF-IDF cosine similarity for authoritative project management advice.
 
-**1. Kitchenham Dataset (n=145)**
-- **Task:** Regression on project cost overrun ratio (`log(Actual/Estimated)`).
-- **Result:** XGBoost Regressor (max_depth=2) achieved a cross-validated Val MAE of 0.275 (Train MAE: 0.148). The negative R² indicates the difficulty of regression on this small, noisy sample, confirming why we rely on synthetic data to model operational variables (attrition, contract types) not present here.
+### 3. 🧪 Interactive What-If Scenario Simulator
+- Real-time parameter sliders (Team Size, Seniority Mix, Scope Changes, Attrition Events, Employee Cost Ratio).
+- Counterfactual inference against the live XGBoost model to test risk mitigations before committing budget.
 
-**2. NASA93 Dataset (n=93)**
-- **Task:** Size-to-effort regression predicting `log(act_effort)` from standard COCOMO-I cost drivers and LOC. 
-- **Result:** XGBoost Regressor (max_depth=2) achieved a cross-validated **Val R² of 0.735 ± 0.153**, validating that the underlying algorithm reliably models standard parametric software metrics on real data.
+### 4. 🗺️ Interactive Risk Heatmap Dashboard
+- Portfolio-wide color-coded matrix (Green $\leftrightarrow$ Red) visualizing normalized SHAP factor impacts across all projects.
+- Interactive hover tooltips showing exact magnitude, direction, and drill-down into individual project views.
 
-### Model Selection: Why XGBoost
+### 5. 📊 Multi-Project Comparison View
+- Side-by-side comparison of 2–3 projects with diff-style highlighting (🏆 Best / ⚠ Worst indicators).
+- Visual horizontal bar charts comparing top SHAP drivers and recommended actions across projects.
 
-Gradient-boosted trees handle tabular data with mixed feature types well, train fast, and are directly interpretable via SHAP's TreeExplainer. We chose a **single well-tuned XGBoost** over an ensemble for cleaner SHAP explanations.
+### 6. 📄 Executive PMO & PDF Report Export
+- One-click **Markdown Executive Report** with structured summaries, financial impact, and strategic recommendations.
+- Downloadable **Branded A4 PDF Report** generated via ReportLab with tables, risk badges, and metrics.
 
-> **Design decision**: A VotingClassifier ensemble (XGBoost + Random Forest + Gradient Boosting) was explored in v2.0. It was deprioritized in favor of SHAP interpretability and stability — a single model produces a cleaner explanatory story for each prediction, which matters more for a PMO decision-support tool than marginal accuracy gains.
+### 7. 🔔 Omnichannel Risk Alerts (Slack & Email)
+- **Slack Webhooks**: Interactive Block Kit risk alert cards sent directly to PMO channels.
+- **HTML Email Alerts**: Executive-styled HTML emails via SMTP with dry-run interactive preview modals.
 
-### The Overfitting Story — A Genuine Diagnostic Win
+### 8. 📤 Excel & CSV Bulk Portfolio Ingestion
+- Upload `.csv` or `.xlsx` files with automatic column normalization and validation.
+- Download pre-formatted CSV template with standard headers.
 
-Our initial model (v1, `max_depth=6`) achieved **100% training accuracy** but only **70% validation accuracy** — a 30% generalization gap. This is textbook overfitting on a 950-record dataset.
+### 9. 🎨 Premium UI with Animated Landing Page & Themes
+- **Animated Hero Landing Page** with floating gradient orbs, stats counter, feature cards, and CTA transition.
+- **Dark / Light Theme Toggle** with `localStorage` persistence and CSS variable transitions.
+- **Shimmer Skeleton Loaders** and Toast notification feedback system.
 
-**Diagnosis process** (see `model/diagnose_model.py`):
-1. Generated learning curves → confirmed high variance (diverging train/val)
-2. Swept max_depth from 1-8 → identified depth=2 as optimal
-3. Applied strong regularization: `min_child_weight=10`, `reg_lambda=5`, `gamma=1`, `subsample=0.7`
+---
 
-**Result**:
+## 📊 Model Performance Metrics
 
-| Metric | v1 (Overfitting) | v2.1 (Fixed) |
-|--------|-----------------|--------------|
-| Training accuracy | 100% 🔴 | 84.5% ✅ |
-| Validation accuracy | 70.0% | 74.9% |
-| **Generalization gap** | **30.0%** | **10.1%** |
-| max_depth | 6 | 2 |
+### Classifier Metrics (Stratified Test Set, N=190)
 
-### Performance Metrics (v2.1 — Final)
+| Class | Precision | Recall | F1-Score | Support |
+|---|---|---|---|---|
+| **at_risk** | 0.63 | 0.78 | 0.69 | 76 |
+| **failed** | 0.76 | 0.64 | 0.69 | 44 |
+| **on_track** | 0.83 | 0.70 | 0.76 | 70 |
+| **Overall Accuracy** | | | **71.58%** | 190 |
 
-**Classifier** (3-class: on_track / at_risk / failed):
+- **5-Fold Cross-Validation Accuracy**: $75.5\% \pm 2.4\%$
+- **Overfitting Diagnostics**: Resolved via shallow depth (`max_depth=2`), `min_child_weight=10`, `subsample=0.7`. Generalization gap reduced from 30% to 10.1%.
 
-| Class | Precision | Recall | F1 | Support |
-|-------|-----------|--------|----|---------|
-| at_risk | 0.63 | 0.78 | 0.69 | 76 |
-| failed | 0.76 | 0.64 | 0.69 | 44 |
-| on_track | 0.83 | 0.70 | 0.76 | 70 |
-| **Overall accuracy** | | | **0.72** | 190 |
+### Cost Regressor Metrics
+- **Mean Absolute Error (MAE)**: 0.043
+- **Root Mean Squared Error (RMSE)**: 0.056
+- **$R^2$ Score**: 0.787
 
-- 5-fold CV accuracy: 75.5% ± 2.4%
-- Best hyperparameters: `max_depth=2`, `n_estimators=300`, `learning_rate=0.05`
+---
 
-**Cost Regressor**: MAE=0.043, RMSE=0.056, R²=0.787
+## ⚡ Quickstart & Running Locally
 
-### Feature Engineering
+### Option A: Docker Deployment (Recommended)
 
-8 domain-specific derived features grounded in industry knowledge:
-
-| Feature | Formula | Rationale |
-|---------|---------|-----------|
-| `scope_fixed_bid_pressure` | scope_changes × is_fixed_bid | Scope creep under fixed-bid = trapped cost |
-| `attrition_cost_burden` | attrition × ECR × 0.275 | Each replacement costs 25-30% premium |
-| `budget_per_person_week` | budget / (team × weeks) | Low = underfunded project |
-| `junior_heavy` | junior>40% AND senior<25% | Risky team composition flag |
-| `burn_instability` | burn_variance × duration | Longer projects amplify variance |
-| `ecr_above_baseline` | max(0, ECR - 0.57) | How far above industry average |
-| `scope_intensity` | scope_changes / weeks | Scope change rate per week |
-| `attrition_rate` | attrition / team_size | Normalized attrition |
-
-### SHAP Explainability
-
-Every prediction includes the top 3 SHAP factors in plain English:
-- *"Cumulative attrition costs (lateral-hire premiums) are significant"*
-- *"Employee costs are well-managed relative to the budget"*
-- *"Low scope creep is helping keep this project on track"*
-
-### RL Intervention Recommendations
-
-DELTA includes a **contextual bandit** (Thompson Sampling) that recommends project interventions:
-
-| Action | Description |
-|--------|-------------|
-| Freeze Scope | Stop accepting new scope changes |
-| Add Senior Staff | Increase senior developer ratio by 15% |
-| Right-Size Team | Adjust team size to match budget capacity |
-| Switch to T&M | Negotiate contract change to time-and-material |
-| Increase Monitoring | Reduce burn-rate variance with weekly reviews |
-
-**Important**: Rewards come from **counterfactual simulation** through the trained classifier — the bandit asks "what would happen if we applied this intervention?" and re-predicts. This demonstrates prescriptive analytics at demo scale. It does **not** learn from real intervention outcomes, which would require deployed usage data.
-
-## Research Grounding
-
-Calibration numbers from *"The Indian IT Services Sector at a Crossroads"*:
-
-- **Employee cost ratio baseline**: 57-60% of revenue (industry average)
-- **Attrition rate**: ~13-14% annualized
-- **Lateral-hire premium**: 25-30% above existing employee cost
-- **AI cost-saving benchmarks**: 30-40% operational cost reduction, 14% labor savings, 12% equipment cost savings, 6-12 month ROI
-- **Go-to-market rationale**: Mid-cap firms lack in-house AI capabilities
-
-> **These are industry-aggregate calibration parameters** used to make synthetic data realistic. The paper provided directional guidance, not row-level training data.
-
-## Market Positioning
-
-- **Target**: Mid-cap Indian IT service firms (₹5,000-₹50,000 Cr revenue)
-- **Not targeting**: Tier-1 firms (TCS, Infosys, Wipro) — they build in-house AI
-- **Value prop**: Early-warning predictions + actionable interventions
-- **Paper's benchmarks**: 30-40% operational cost reduction possible with AI tooling
-
-## How to Run Locally
+Run the full stack with a single command:
 
 ```bash
-# 1. Clone and install
-git clone <repo-url>
-cd delta-hackathon
+# Clone the repository
+git clone https://github.com/Dhusyanth209/delta.git
+cd delta
+
+# Build and start services
+docker-compose up --build
+```
+- Frontend: **http://localhost:3000**
+- Backend API: **http://localhost:8000**
+- Interactive Swagger Docs: **http://localhost:8000/docs**
+
+---
+
+### Option B: Native Local Setup
+
+#### 1. Backend Setup
+```bash
+# Install Python dependencies
 pip install -r requirements.txt
 
-# 2. Generate dataset
+# (Optional) Retrain models or regenerate dataset
 python data/generate_dataset.py
-
-# 3. Train models
 python model/train_model_v2.py
 
-# 4. Start backend API
+# Start FastAPI server
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+```
 
-# 5. Start frontend (in another terminal)
+#### 2. Frontend Setup
+```bash
+# In a separate terminal
 cd frontend
 npm install
 npm run dev
-
-# 6. Open http://localhost:3000
 ```
+Open **http://localhost:3000** in your browser.
 
-## API Endpoints
+---
+
+## 🔌 API Endpoints Summary
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check + model info |
-| `/predict` | POST | Risk class + cost + SHAP + RL recommendations |
-| `/projects/sample` | GET | 8 sample projects with predictions |
-| `/metrics` | GET | Model training metrics |
-| `/docs` | GET | Interactive API docs (Swagger) |
+|---|---|---|
+| `/health` | GET | Health check, model status, and metadata |
+| `/predict` | POST | Primary risk prediction, cost calculation, SHAP factors, RL actions |
+| `/simulate` | POST | What-If simulation against custom counterfactual inputs |
+| `/projects/sample` | GET | Returns curated sample projects with full predictions |
+| `/projects/upload` | POST | Bulk upload CSV / Excel for batch portfolio predictions |
+| `/projects/template`| GET | Download standard CSV project upload template |
+| `/heatmap/data` | POST | Normalized SHAP matrix computation for portfolio heatmap |
+| `/report/generate` | POST | Markdown Executive PMO Report generator |
+| `/report/pdf` | POST | Branded A4 PDF report export (ReportLab) |
+| `/copilot/chat` | POST | AI Copilot conversational chat (Gemini 2.0 + PMBOK RAG) |
+| `/alerts/slack` | POST | Post Block Kit alert to Slack webhook (or dry-run preview) |
+| `/alerts/email` | POST | Send HTML risk alert via SMTP (or dry-run preview) |
+| `/metrics` | GET | Detailed model evaluation metrics |
 
-## Known Limitations
+---
 
-1. **Synthetic training data**: 950 generated records, not real company projects. Model accuracy would likely differ with real data.
-2. **Limited real-data validation**: Plausibility checked against one PROMISE dataset (Desharnais, 81 projects) — not a rigorous statistical validation.
-3. **No temporal modeling**: Time-series aspects of project progression are not captured. Each prediction is a point-in-time snapshot.
-4. **SHAP is model-centric**: Feature importance reflects what the model learned, not necessarily causal relationships.
-5. **RL reward is simulated**: Counterfactual simulation through the classifier, not observed real outcomes.
-6. **Exchange rate hardcoded**: USD/INR at 83.5 — not dynamically updated.
-7. **Missing long projects**: Synthetic data caps at ~30 weeks; real portfolios include multi-year engagements.
-8. **Small validation sample**: Desharnais has only 81 projects with different feature definitions.
+## 🧪 Test Suite
 
-## What Would Make This Production-Ready
+Run automated verification test scripts:
 
-1. **Real company data**: Partnership with 2-3 mid-cap IT firms to collect 5,000+ real project records
-2. **Temporal features**: Weekly burn-rate time series, milestone tracking
-3. **RL from real outcomes**: Observe actual intervention results to train the bandit
-4. **A/B testing**: Compare PMO decisions with and without DELTA predictions
-5. **Dynamic exchange rates**: API-fetched currency conversion
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| ML Models | XGBoost, scikit-learn |
-| Explainability | SHAP (TreeExplainer) |
-| RL | Thompson Sampling (custom) |
-| Backend | FastAPI, Python 3.13 |
-| Frontend | Next.js, TypeScript |
-| Deployment | Render (backend), Vercel (frontend) |
-
-## Repository Structure
-
-```
-delta-hackathon/
-├── data/                    # Dataset generation + sanity check
-│   ├── generate_dataset.py  # Synthetic data generator
-│   ├── synthetic_projects.csv
-│   ├── desharnais_promise.csv
-│   └── sanity_check_promise.py
-├── model/                   # Training + diagnostics
-│   ├── train_model_v2.py    # Final training pipeline
-│   ├── diagnose_model.py    # Overfitting diagnostics
-│   ├── artifacts/           # Saved models + metrics
-│   └── diagnostics/         # Learning curves, plots
-├── backend/                 # FastAPI server
-│   └── main.py
-├── frontend/                # Next.js dashboard
-│   └── app/
-├── docs/                    # Documentation
-│   ├── README.md
-│   ├── VIDEO_SCRIPT.md
-│   └── real_data_sanity_check.md
-├── requirements.txt
-├── Procfile                 # Render deployment
-└── render.yaml
+```bash
+# Run all stage tests
+python model/test_stage6_upload.py    # Bulk Ingestion tests (6/6)
+python model/test_stage7_heatmap.py   # Heatmap SHAP Matrix tests (6/6)
+python model/test_stage8_9.py         # Docker & PDF Report tests (8/8)
+python model/test_stage13_email.py    # Email Alerts & HTML Template tests (4/4)
 ```
 
-## License
+---
 
-MIT
+## 🛠️ Technology Stack
+
+- **Machine Learning**: XGBoost 2.0+, scikit-learn, SHAP (TreeExplainer), Multi-Armed Bandit (Thompson Sampling)
+- **Backend**: FastAPI, Pydantic v2, Uvicorn, ReportLab, OpenPyXL, Google Generative AI
+- **Frontend**: Next.js 15+, React 19, TypeScript, Vanilla CSS Custom Design Tokens
+- **DevOps**: Docker, Docker Compose, Multi-Stage Node & Python Slim Images
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.

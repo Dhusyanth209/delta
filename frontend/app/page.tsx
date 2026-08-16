@@ -175,6 +175,23 @@ export default function DeltaDashboard() {
   const [showLanding, setShowLanding] = useState(true);
   const [landingFading, setLandingFading] = useState(false);
 
+  // Email Alert state
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailRecipient, setEmailRecipient] = useState("pmo-alerts@enterprise.com");
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [emailResult, setEmailResult] = useState<any>(null);
+
+  // Toast Notification state
+  const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "success" | "error" | "info" }>>([]);
+
+  const addToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  }, []);
+
   // Initialize theme from localStorage
   useEffect(() => {
     const saved = localStorage.getItem("delta-theme") as "dark" | "light" | null;
@@ -313,16 +330,48 @@ export default function DeltaDashboard() {
       setSlackStatus(data.status);
       if (data.status === "dry_run") {
         setSlackPreview(data);
+        addToast("Slack alert generated (dry-run preview ready)", "info");
       } else if (data.status === "sent") {
         setSlackPreview(data);
+        addToast("Slack alert posted successfully!", "success");
       }
     } catch (err: any) {
       console.error("Slack alert failed:", err);
       setSlackStatus("error");
+      addToast(`Slack alert error: ${err.message}`, "error");
     } finally {
       setSlackLoading(false);
     }
-  }, [form, result]);
+  }, [form, result, addToast]);
+
+  const handleSendEmailAlert = useCallback(async () => {
+    if (!form || !result || !emailRecipient) return;
+    setEmailLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/alerts/email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          recipient_email: emailRecipient,
+          project_features: form,
+          prediction_result: result,
+        }),
+      });
+      if (!res.ok) throw new Error(`Email error: ${res.status}`);
+      const data = await res.json();
+      setEmailResult(data);
+      if (data.status === "sent") {
+        addToast(`Email alert delivered to ${emailRecipient}`, "success");
+      } else {
+        addToast(`Email preview generated for ${emailRecipient}`, "info");
+      }
+    } catch (err: any) {
+      console.error("Email alert failed:", err);
+      addToast(`Failed to generate email alert: ${err.message}`, "error");
+    } finally {
+      setEmailLoading(false);
+    }
+  }, [form, result, emailRecipient, addToast]);
 
   const handleUpload = useCallback(async (file: File) => {
     setUploadLoading(true);
@@ -468,6 +517,87 @@ export default function DeltaDashboard() {
 
   return (
     <div className="app">
+      {/* Toast Notification Container */}
+      <div className="toast-container">
+        {toasts.map(t => (
+          <div key={t.id} className={`toast toast-${t.type}`}>
+            <span>{t.type === "success" ? "✓" : t.type === "error" ? "✕" : "ℹ"}</span>
+            <span>{t.message}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Email Alert Modal */}
+      {emailModalOpen && (
+        <div className="modal-backdrop" onClick={() => setEmailModalOpen(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">
+                <span>📧</span> Executive Email Risk Alert
+              </div>
+              <button
+                className="copilot-close"
+                onClick={() => setEmailModalOpen(false)}
+                style={{ fontSize: 18 }}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <label style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginBottom: 6 }}>
+                Recipient Email Address:
+              </label>
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <input
+                  type="email"
+                  className="form-input"
+                  style={{ flex: 1 }}
+                  value={emailRecipient}
+                  onChange={e => setEmailRecipient(e.target.value)}
+                  placeholder="e.g. pmo-head@company.com"
+                />
+                <button
+                  className="sim-btn active"
+                  style={{ padding: "8px 16px", fontSize: 12 }}
+                  onClick={handleSendEmailAlert}
+                  disabled={emailLoading}
+                >
+                  {emailLoading ? "Sending..." : "Send Alert"}
+                </button>
+              </div>
+
+              {emailResult && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", marginBottom: 6 }}>
+                    Email Preview ({emailResult.status === "sent" ? "✅ Sent" : "ℹ️ Dry-Run Preview"})
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--text-primary)", fontWeight: 600, marginBottom: 8, padding: "6px 10px", background: "var(--glass-bg)", borderRadius: 6 }}>
+                    Subject: {emailResult.subject}
+                  </div>
+                  <div
+                    style={{
+                      maxHeight: 260,
+                      overflowY: "auto",
+                      border: "1px solid var(--glass-border)",
+                      borderRadius: 8,
+                      background: "#0A0E1A",
+                      padding: 12,
+                      fontSize: 12,
+                    }}
+                    dangerouslySetInnerHTML={{ __html: emailResult.html_preview }}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="sim-btn" onClick={() => setEmailModalOpen(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Landing Page Overlay */}
       {showLanding && (
         <div className={`landing-overlay ${landingFading ? 'fadeout' : ''}`}>
@@ -1402,6 +1532,18 @@ export default function DeltaDashboard() {
             </div>
           )}
 
+          {/* Loading Shimmer Skeleton */}
+          {loading && (
+            <div style={{ marginTop: 24 }}>
+              <div className="skeleton skeleton-text" style={{ width: "30%", height: 20, marginBottom: 16 }} />
+              <div className="skeleton-grid">
+                <div className="skeleton skeleton-card" />
+                <div className="skeleton skeleton-card" />
+                <div className="skeleton skeleton-card" />
+              </div>
+            </div>
+          )}
+
           {/* Prediction Results */}
           {result && (
             <>
@@ -1452,14 +1594,26 @@ export default function DeltaDashboard() {
                     <span>📥</span> Download PDF
                   </button>
                   {(result.risk_class === "at_risk" || result.risk_class === "failed") && (
-                    <button
-                      className="sim-btn"
-                      style={{ padding: "10px 18px", fontSize: 13, display: "flex", alignItems: "center", gap: 8, background: result.risk_class === "failed" ? "rgba(239, 68, 68, 0.15)" : "rgba(251, 191, 36, 0.15)", border: `1px solid ${result.risk_class === "failed" ? "rgba(239, 68, 68, 0.4)" : "rgba(251, 191, 36, 0.4)"}` }}
-                      onClick={handleSlackAlert}
-                      disabled={slackLoading}
-                    >
-                      <span>🔔</span> {slackLoading ? "Sending..." : "Send Slack Alert"}
-                    </button>
+                    <>
+                      <button
+                        className="sim-btn"
+                        style={{ padding: "10px 18px", fontSize: 13, display: "flex", alignItems: "center", gap: 8, background: result.risk_class === "failed" ? "rgba(239, 68, 68, 0.15)" : "rgba(251, 191, 36, 0.15)", border: `1px solid ${result.risk_class === "failed" ? "rgba(239, 68, 68, 0.4)" : "rgba(251, 191, 36, 0.4)"}` }}
+                        onClick={handleSlackAlert}
+                        disabled={slackLoading}
+                      >
+                        <span>🔔</span> {slackLoading ? "Sending..." : "Send Slack Alert"}
+                      </button>
+                      <button
+                        className="sim-btn"
+                        style={{ padding: "10px 18px", fontSize: 13, display: "flex", alignItems: "center", gap: 8, background: "rgba(59, 130, 246, 0.15)", border: "1px solid rgba(59, 130, 246, 0.4)" }}
+                        onClick={() => {
+                          setEmailModalOpen(true);
+                          if (!emailResult) handleSendEmailAlert();
+                        }}
+                      >
+                        <span>📧</span> Send Email Alert
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
