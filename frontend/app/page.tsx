@@ -188,6 +188,18 @@ export default function DeltaDashboard() {
   const [trajectoryData, setTrajectoryData] = useState<any>(null);
   const [trajectoryLoading, setTrajectoryLoading] = useState(false);
 
+  // Bookmarks & History state
+  const [bookmarks, setBookmarks] = useState<Array<{
+    id: string;
+    label: string;
+    timestamp: number;
+    features: any;
+    result: any;
+    risk_class: string;
+    overrun_pct: number;
+  }>>([]);
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+
   const addToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
     const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { id, message, type }]);
@@ -203,6 +215,11 @@ export default function DeltaDashboard() {
       setTheme(saved);
       document.documentElement.setAttribute("data-theme", saved);
     }
+    // Load bookmarks from localStorage
+    try {
+      const savedBookmarks = localStorage.getItem("delta-bookmarks");
+      if (savedBookmarks) setBookmarks(JSON.parse(savedBookmarks));
+    } catch {}
   }, []);
 
   const toggleTheme = useCallback(() => {
@@ -211,6 +228,52 @@ export default function DeltaDashboard() {
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem("delta-theme", next);
   }, [theme]);
+
+  // Bookmark helpers
+  const saveBookmark = useCallback(() => {
+    if (!form || !result) return;
+    const industry = form.industry_type || "Project";
+    const id = `bm-${Date.now()}`;
+    const label = `${industry} — ${form.team_size} ppl, $${(form.budget_planned_usd / 1000).toFixed(0)}K`;
+    const bm = {
+      id,
+      label,
+      timestamp: Date.now(),
+      features: { ...form },
+      result: { ...result },
+      risk_class: result.risk_class,
+      overrun_pct: result.overrun_percentage,
+    };
+    setBookmarks(prev => {
+      const next = [bm, ...prev].slice(0, 50); // cap at 50
+      localStorage.setItem("delta-bookmarks", JSON.stringify(next));
+      return next;
+    });
+    addToast(`Bookmarked: ${label}`, "success");
+  }, [form, result, addToast]);
+
+  const deleteBookmark = useCallback((id: string) => {
+    setBookmarks(prev => {
+      const next = prev.filter(b => b.id !== id);
+      localStorage.setItem("delta-bookmarks", JSON.stringify(next));
+      return next;
+    });
+    addToast("Bookmark removed", "info");
+  }, [addToast]);
+
+  const restoreBookmark = useCallback((bm: any) => {
+    setForm(bm.features);
+    setResult(bm.result);
+    setTrajectoryData(null);
+    setHistoryDrawerOpen(false);
+    addToast(`Restored: ${bm.label}`, "success");
+  }, [addToast]);
+
+  const clearAllBookmarks = useCallback(() => {
+    setBookmarks([]);
+    localStorage.removeItem("delta-bookmarks");
+    addToast("All bookmarks cleared", "info");
+  }, [addToast]);
 
   useEffect(() => {
     copilotMessagesEnd.current?.scrollIntoView({ behavior: "smooth" });
@@ -711,6 +774,18 @@ export default function DeltaDashboard() {
               {theme === "dark" ? "🌙" : "☀️"}
               <div className="theme-toggle" />
             </label>
+            <button
+              className="sim-btn"
+              style={{ padding: "6px 12px", fontSize: 12, display: "flex", alignItems: "center", gap: 6, background: historyDrawerOpen ? "rgba(46, 92, 255, 0.2)" : "rgba(255,255,255,0.05)", border: "1px solid var(--glass-border)", position: "relative" }}
+              onClick={() => setHistoryDrawerOpen(prev => !prev)}
+            >
+              📑 History
+              {bookmarks.length > 0 && (
+                <span style={{ background: "#2E5CFF", color: "#fff", borderRadius: "50%", width: 16, height: 16, fontSize: 9, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>
+                  {bookmarks.length}
+                </span>
+              )}
+            </button>
             <div className="header-badge glass">
               <span className="pulse"></span>
               Model Active
@@ -1597,6 +1672,13 @@ export default function DeltaDashboard() {
                   >
                     <span>📥</span> Download PDF
                   </button>
+                  <button
+                    className="sim-btn"
+                    style={{ padding: "10px 18px", fontSize: 13, display: "flex", alignItems: "center", gap: 8, background: "rgba(34, 197, 94, 0.1)", border: "1px solid rgba(34, 197, 94, 0.3)" }}
+                    onClick={saveBookmark}
+                  >
+                    <span>⭐</span> Bookmark
+                  </button>
                   {(result.risk_class === "at_risk" || result.risk_class === "failed") && (
                     <>
                       <button
@@ -2444,6 +2526,97 @@ export default function DeltaDashboard() {
           </div>
         </div>
       )}
+
+      {/* History Drawer Overlay */}
+      {historyDrawerOpen && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9998, backdropFilter: "blur(2px)" }}
+          onClick={() => setHistoryDrawerOpen(false)}
+        />
+      )}
+
+      {/* History Drawer */}
+      <div
+        style={{
+          position: "fixed", top: 0, right: historyDrawerOpen ? 0 : -420, width: 400, height: "100vh",
+          background: "var(--bg-primary)", borderLeft: "1px solid var(--glass-border)",
+          zIndex: 9999, transition: "right 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          display: "flex", flexDirection: "column", boxShadow: historyDrawerOpen ? "-8px 0 32px rgba(0,0,0,0.3)" : "none",
+        }}
+      >
+        {/* Drawer Header */}
+        <div style={{ padding: "20px", borderBottom: "1px solid var(--glass-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>📑 Saved Predictions</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{bookmarks.length} bookmark{bookmarks.length !== 1 ? "s" : ""} saved</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {bookmarks.length > 0 && (
+              <button
+                className="sim-btn"
+                style={{ padding: "4px 10px", fontSize: 10, color: "#EF4444", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.05)" }}
+                onClick={clearAllBookmarks}
+              >
+                Clear All
+              </button>
+            )}
+            <button
+              className="sim-btn"
+              style={{ padding: "4px 10px", fontSize: 14 }}
+              onClick={() => setHistoryDrawerOpen(false)}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Drawer Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
+          {bookmarks.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "60px 20px", color: "var(--text-muted)" }}>
+              <div style={{ fontSize: 40, marginBottom: 12 }}>📌</div>
+              <div style={{ fontSize: 13, marginBottom: 6 }}>No bookmarks yet</div>
+              <div style={{ fontSize: 11 }}>Run a prediction and click ⭐ Bookmark to save it here.</div>
+            </div>
+          ) : (
+            bookmarks.map((bm) => (
+              <div
+                key={bm.id}
+                style={{
+                  background: "var(--glass-bg)", border: "1px solid var(--glass-border)", borderRadius: 12,
+                  padding: "14px 16px", marginBottom: 10, cursor: "pointer",
+                  transition: "border-color 0.2s, transform 0.15s",
+                }}
+                onClick={() => restoreBookmark(bm)}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = "#2E5CFF"; (e.currentTarget as HTMLElement).style.transform = "translateX(-2px)"; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = "var(--glass-border)"; (e.currentTarget as HTMLElement).style.transform = "translateX(0)"; }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)", flex: 1 }}>{bm.label}</div>
+                  <button
+                    className="sim-btn"
+                    style={{ padding: "2px 6px", fontSize: 10, color: "#EF4444", border: "none", background: "transparent", flexShrink: 0 }}
+                    onClick={e => { e.stopPropagation(); deleteBookmark(bm.id); }}
+                  >
+                    🗑
+                  </button>
+                </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                  <span className={`risk-badge risk-${bm.risk_class}`} style={{ fontSize: 9, padding: "2px 8px" }}>
+                    {riskLabel(bm.risk_class)}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: bm.overrun_pct > 0 ? "#F87171" : "#34D399" }}>
+                    {bm.overrun_pct > 0 ? "+" : ""}{bm.overrun_pct.toFixed(1)}% overrun
+                  </span>
+                </div>
+                <div style={{ fontSize: 10, color: "var(--text-muted)" }}>
+                  {new Date(bm.timestamp).toLocaleDateString()} {new Date(bm.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
     </div>
   );
 }
