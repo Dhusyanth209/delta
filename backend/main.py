@@ -964,6 +964,112 @@ async def copilot_chat(req: CopilotChatRequest):
     return _fallback_copilot_response(req.question, req.project_features, req.prediction_result)
 
 
+# ─── Risk Trajectory Across Milestones ────────────────────────────────────────
+
+MILESTONE_PHASES = [
+    {"id": "kickoff",  "label": "Kickoff",  "week_pct": 0.0,  "scope_mult": 0.0, "attrition_mult": 0.0, "burn_drift": 0.0},
+    {"id": "planning", "label": "Planning", "week_pct": 0.15, "scope_mult": 0.2, "attrition_mult": 0.1, "burn_drift": 0.02},
+    {"id": "build",    "label": "Build",    "week_pct": 0.45, "scope_mult": 0.6, "attrition_mult": 0.5, "burn_drift": 0.05},
+    {"id": "testing",  "label": "Testing",  "week_pct": 0.70, "scope_mult": 0.85,"attrition_mult": 0.7, "burn_drift": 0.08},
+    {"id": "uat",      "label": "UAT",      "week_pct": 0.85, "scope_mult": 1.0, "attrition_mult": 0.9, "burn_drift": 0.10},
+    {"id": "golive",   "label": "Go-Live",  "week_pct": 1.0,  "scope_mult": 1.0, "attrition_mult": 1.0, "burn_drift": 0.12},
+]
+
+
+class TrajectoryRequest(BaseModel):
+    project_features: ProjectFeatures = Field(..., description="Baseline project parameters")
+
+
+class MilestonePoint(BaseModel):
+    milestone_id: str
+    milestone_label: str
+    week_number: int
+    risk_class: str
+    risk_confidence: float
+    overrun_percentage: float
+    predicted_cost_usd: float
+    budget_usd: float
+    top_factor: str
+    top_factor_impact: str
+    health: str  # "healthy", "warning", "critical"
+
+
+class TrajectoryResponse(BaseModel):
+    milestones: list[MilestonePoint]
+    risk_escalation_point: Optional[str] = None  # milestone where risk first escalates
+    final_risk: str
+    total_duration_weeks: int
+
+
+@app.post("/trajectory", response_model=TrajectoryResponse)
+async def compute_trajectory(req: TrajectoryRequest):
+    """Simulate project risk evolution across 6 milestone phases."""
+    base = req.project_features.model_dump()
+    total_weeks = base["duration_planned_weeks"]
+    total_scope = base["scope_change_count"]
+    total_attrition = base["attrition_events"]
+    base_burn_var = base["weekly_burn_rate_variance"]
+
+    milestones: list[MilestonePoint] = []
+    prev_risk = None
+    escalation_point = None
+
+    for phase in MILESTONE_PHASES:
+        # Build phase-specific features: progressively apply stress
+        phase_features = dict(base)
+        phase_features["scope_change_count"] = max(0, round(total_scope * phase["scope_mult"]))
+        phase_features["attrition_events"] = max(0, round(total_attrition * phase["attrition_mult"]))
+        phase_features["weekly_burn_rate_variance"] = min(1.0, base_burn_var + phase["burn_drift"])
+
+        # Run prediction through the model
+        pf = ProjectFeatures(**phase_features)
+        pred_resp = await predict(pf)
+        pred = pred_resp.model_dump()
+
+        week_num = max(1, round(total_weeks * phase["week_pct"])) if phase["week_pct"] > 0 else 0
+
+        # Determine health status
+        risk = pred["risk_class"]
+        overrun = pred["overrun_percentage"]
+        if risk == "on_track" and overrun < 10:
+            health = "healthy"
+        elif risk == "failed" or overrun > 25:
+            health = "critical"
+        else:
+            health = "warning"
+
+        # Track escalation point
+        if prev_risk and prev_risk == "on_track" and risk != "on_track" and not escalation_point:
+            escalation_point = phase["label"]
+        if prev_risk and prev_risk != "failed" and risk == "failed" and not escalation_point:
+            escalation_point = phase["label"]
+        prev_risk = risk
+
+        # Top SHAP factor
+        top_f = pred.get("top_factors", [{}])[0] if pred.get("top_factors") else {}
+
+        milestones.append(MilestonePoint(
+            milestone_id=phase["id"],
+            milestone_label=phase["label"],
+            week_number=week_num,
+            risk_class=risk,
+            risk_confidence=pred["risk_confidence"],
+            overrun_percentage=overrun,
+            predicted_cost_usd=pred["predicted_final_cost_usd"],
+            budget_usd=pred["budget_planned_usd"],
+            top_factor=top_f.get("feature", ""),
+            top_factor_impact=top_f.get("impact", ""),
+            health=health,
+        ))
+
+    return TrajectoryResponse(
+        milestones=milestones,
+        risk_escalation_point=escalation_point,
+        final_risk=milestones[-1].risk_class if milestones else "unknown",
+        total_duration_weeks=total_weeks,
+    )
+
+
 # ─── What-If Simulation ──────────────────────────────────────────────────────
 
 class SimulationRequest(BaseModel):
