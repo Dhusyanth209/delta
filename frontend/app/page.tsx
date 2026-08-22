@@ -184,6 +184,10 @@ export default function DeltaDashboard() {
   // Toast Notification state
   const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "success" | "error" | "info" }>>([]);
 
+  // Risk Trajectory state
+  const [trajectoryData, setTrajectoryData] = useState<any>(null);
+  const [trajectoryLoading, setTrajectoryLoading] = useState(false);
+
   const addToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
     const id = Date.now() + Math.random();
     setToasts(prev => [...prev, { id, message, type }]);
@@ -1768,6 +1772,125 @@ export default function DeltaDashboard() {
                     ))}
                   </div>
                 )}
+
+                {/* Risk Trajectory Timeline */}
+                <div className="panel glass" style={{ overflow: "hidden" }}>
+                  <div className="panel-header" style={{ padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div className="panel-title" style={{ fontSize: 14 }}>📈 Risk Trajectory — Milestone Evolution</div>
+                    <button
+                      className="sim-btn active"
+                      style={{ padding: "6px 14px", fontSize: 11 }}
+                      disabled={trajectoryLoading}
+                      onClick={async () => {
+                        if (!form) return;
+                        setTrajectoryLoading(true);
+                        try {
+                          const res = await fetch(`${API_BASE}/trajectory`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ project_features: form }),
+                          });
+                          if (!res.ok) throw new Error(`Trajectory error: ${res.status}`);
+                          const data = await res.json();
+                          setTrajectoryData(data);
+                          addToast("Risk trajectory computed across 6 milestones", "success");
+                        } catch (err: any) {
+                          console.error("Trajectory failed:", err);
+                          addToast(`Trajectory error: ${err.message}`, "error");
+                        } finally {
+                          setTrajectoryLoading(false);
+                        }
+                      }}
+                    >
+                      {trajectoryLoading ? "Computing..." : trajectoryData ? "↻ Refresh" : "Compute Trajectory"}
+                    </button>
+                  </div>
+
+                  {trajectoryData && (() => {
+                    const ms = trajectoryData.milestones || [];
+                    const healthColor = (h: string) => h === "healthy" ? "#22C55E" : h === "critical" ? "#EF4444" : "#F59E0B";
+                    const riskRankNum = (r: string) => r === "on_track" ? 0 : r === "at_risk" ? 1 : 2;
+
+                    // SVG sparkline points
+                    const svgW = 600;
+                    const svgH = 80;
+                    const points = ms.map((m: any, i: number) => ({
+                      x: (i / Math.max(ms.length - 1, 1)) * (svgW - 40) + 20,
+                      y: svgH - 12 - (riskRankNum(m.risk_class) / 2) * (svgH - 24),
+                    }));
+                    const pathD = points.map((p: any, i: number) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+
+                    return (
+                      <div style={{ padding: "0 20px 20px" }}>
+                        {/* Escalation Alert */}
+                        {trajectoryData.risk_escalation_point && (
+                          <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239, 68, 68, 0.08)", border: "1px solid rgba(239, 68, 68, 0.2)", marginBottom: 16, fontSize: 12, color: "#FCA5A5", display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 16 }}>⚠</span>
+                            <span>Risk escalation detected at <strong style={{ color: "#F87171" }}>{trajectoryData.risk_escalation_point}</strong> milestone — consider early intervention before this phase.</span>
+                          </div>
+                        )}
+
+                        {/* SVG Sparkline */}
+                        <div style={{ overflowX: "auto", marginBottom: 20 }}>
+                          <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} style={{ width: "100%", maxWidth: svgW }}>
+                            <line x1="20" y1={svgH - 12} x2={svgW - 20} y2={svgH - 12} stroke="var(--glass-border)" strokeWidth="1" />
+                            <line x1="20" y1={svgH / 2} x2={svgW - 20} y2={svgH / 2} stroke="var(--glass-border)" strokeWidth="0.5" strokeDasharray="4 4" />
+                            <line x1="20" y1="12" x2={svgW - 20} y2="12" stroke="var(--glass-border)" strokeWidth="1" />
+                            <text x="2" y={svgH - 8} fontSize="8" fill="var(--text-muted)">OK</text>
+                            <text x="2" y={svgH / 2 + 3} fontSize="8" fill="var(--text-muted)">Risk</text>
+                            <text x="2" y="16" fontSize="8" fill="var(--text-muted)">Fail</text>
+                            <path d={pathD} fill="none" stroke="url(#trajGrad)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+                            <defs>
+                              <linearGradient id="trajGrad" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stopColor="#22C55E" />
+                                <stop offset="50%" stopColor="#F59E0B" />
+                                <stop offset="100%" stopColor="#EF4444" />
+                              </linearGradient>
+                            </defs>
+                            {points.map((p: any, i: number) => (
+                              <g key={i}>
+                                <circle cx={p.x} cy={p.y} r="5" fill={healthColor(ms[i].health)} stroke="#0A0E1A" strokeWidth="2" />
+                                <text x={p.x} y={svgH - 1} textAnchor="middle" fontSize="8" fill="var(--text-muted)">{ms[i].milestone_label}</text>
+                              </g>
+                            ))}
+                          </svg>
+                        </div>
+
+                        {/* Milestone Cards Row */}
+                        <div style={{ display: "grid", gridTemplateColumns: `repeat(${ms.length}, 1fr)`, gap: 8 }}>
+                          {ms.map((m: any, i: number) => (
+                            <div key={i} style={{
+                              background: "var(--glass-bg)",
+                              border: `1px solid ${m.health === "critical" ? "rgba(239,68,68,0.3)" : m.health === "warning" ? "rgba(245,158,11,0.3)" : "var(--glass-border)"}`,
+                              borderRadius: 10,
+                              padding: "12px 10px",
+                              textAlign: "center",
+                            }}>
+                              <div style={{ width: 8, height: 8, borderRadius: "50%", background: healthColor(m.health), margin: "0 auto 8px", boxShadow: `0 0 8px ${healthColor(m.health)}40` }} />
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text-primary)", marginBottom: 4 }}>{m.milestone_label}</div>
+                              <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 6 }}>Week {m.week_number}</div>
+                              <span className={`risk-badge risk-${m.risk_class}`} style={{ fontSize: 9, padding: "2px 8px" }}>
+                                {riskLabel(m.risk_class)}
+                              </span>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: m.overrun_percentage > 0 ? "#F87171" : "#34D399", marginTop: 6 }}>
+                                {m.overrun_percentage > 0 ? "+" : ""}{m.overrun_percentage.toFixed(1)}%
+                              </div>
+                              <div style={{ fontSize: 9, color: "var(--text-muted)", marginTop: 4 }}>
+                                {m.top_factor?.replace(/_/g, " ") || "—"}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {!trajectoryData && !trajectoryLoading && (
+                    <div style={{ padding: "24px 20px", textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
+                      Click &quot;Compute Trajectory&quot; to simulate how this project&apos;s risk evolves across 6 milestone phases (Kickoff → Planning → Build → Testing → UAT → Go-Live).
+                    </div>
+                  )}
+                </div>
 
                 {/* Expanded What-If Simulation Panel */}
                 <div className="sim-panel full-panel">
