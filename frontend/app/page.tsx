@@ -188,6 +188,10 @@ export default function DeltaDashboard() {
   const [trajectoryData, setTrajectoryData] = useState<any>(null);
   const [trajectoryLoading, setTrajectoryLoading] = useState(false);
 
+  // Model Retrain state
+  const [retrainLoading, setRetrainLoading] = useState(false);
+  const [retrainResult, setRetrainResult] = useState<any>(null);
+
   // Bookmarks & History state
   const [bookmarks, setBookmarks] = useState<Array<{
     id: string;
@@ -1970,6 +1974,97 @@ export default function DeltaDashboard() {
                   {!trajectoryData && !trajectoryLoading && (
                     <div style={{ padding: "24px 20px", textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
                       Click &quot;Compute Trajectory&quot; to simulate how this project&apos;s risk evolves across 6 milestone phases (Kickoff → Planning → Build → Testing → UAT → Go-Live).
+                    </div>
+                  )}
+                </div>
+
+                {/* Model Retraining Panel */}
+                <div className="panel glass" style={{ overflow: "hidden" }}>
+                  <div className="panel-header" style={{ padding: "14px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div className="panel-title" style={{ fontSize: 14 }}>🔄 Model Retraining — Submit Actuals</div>
+                    <button
+                      className="sim-btn active"
+                      style={{ padding: "6px 14px", fontSize: 11 }}
+                      disabled={retrainLoading || !form || !result}
+                      onClick={async () => {
+                        if (!form || !result) return;
+                        setRetrainLoading(true);
+                        try {
+                          const res = await fetch(`${API_BASE}/model/retrain`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              records: [{
+                                features: form,
+                                actual_outcome: result.risk_class,
+                                actual_cost_usd: result.predicted_final_cost_usd,
+                              }],
+                            }),
+                          });
+                          if (!res.ok) throw new Error(`Retrain error: ${res.status}`);
+                          const data = await res.json();
+                          setRetrainResult(data);
+                          addToast(data.improved ? "Model retrained — accuracy improved! ✓" : "Model retrained — accuracy slightly decreased", data.improved ? "success" : "info");
+                        } catch (err: any) {
+                          addToast(`Retrain error: ${err.message}`, "error");
+                        } finally {
+                          setRetrainLoading(false);
+                        }
+                      }}
+                    >
+                      {retrainLoading ? "Retraining..." : "Submit Actuals & Retrain"}
+                    </button>
+                  </div>
+
+                  {retrainResult ? (
+                    <div style={{ padding: "0 20px 20px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+                        {/* Accuracy */}
+                        <div style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)", borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>Classifier Accuracy</div>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>
+                            {(retrainResult.new_metrics.accuracy * 100).toFixed(1)}%
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: retrainResult.delta.accuracy_diff >= 0 ? "#22C55E" : "#EF4444", marginTop: 4 }}>
+                            {retrainResult.delta.accuracy_diff >= 0 ? "▲" : "▼"} {(Math.abs(retrainResult.delta.accuracy_diff) * 100).toFixed(2)}%
+                          </div>
+                          <div style={{ fontSize: 9, color: "var(--text-muted)" }}>was {(retrainResult.old_metrics.accuracy * 100).toFixed(1)}%</div>
+                        </div>
+                        {/* R² */}
+                        <div style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)", borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>Regressor R²</div>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>
+                            {retrainResult.new_metrics.r2.toFixed(4)}
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: retrainResult.delta.r2_diff >= 0 ? "#22C55E" : "#EF4444", marginTop: 4 }}>
+                            {retrainResult.delta.r2_diff >= 0 ? "▲" : "▼"} {Math.abs(retrainResult.delta.r2_diff).toFixed(4)}
+                          </div>
+                          <div style={{ fontSize: 9, color: "var(--text-muted)" }}>was {retrainResult.old_metrics.r2.toFixed(4)}</div>
+                        </div>
+                        {/* MAE */}
+                        <div style={{ background: "var(--glass-bg)", border: "1px solid var(--glass-border)", borderRadius: 10, padding: "14px 16px", textAlign: "center" }}>
+                          <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 4 }}>Regressor MAE</div>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>
+                            {retrainResult.new_metrics.mae.toFixed(4)}
+                          </div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: retrainResult.delta.mae_diff <= 0 ? "#22C55E" : "#EF4444", marginTop: 4 }}>
+                            {retrainResult.delta.mae_diff <= 0 ? "▼" : "▲"} {Math.abs(retrainResult.delta.mae_diff).toFixed(4)}
+                          </div>
+                          <div style={{ fontSize: 9, color: "var(--text-muted)" }}>was {retrainResult.old_metrics.mae.toFixed(4)}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 16, fontSize: 11, color: "var(--text-muted)" }}>
+                        <span>📊 Records added: <strong style={{ color: "var(--text-primary)" }}>{retrainResult.records_added}</strong></span>
+                        <span>📦 Total dataset: <strong style={{ color: "var(--text-primary)" }}>{retrainResult.new_total_records}</strong></span>
+                        <span style={{ color: retrainResult.improved ? "#22C55E" : "#F59E0B" }}>
+                          {retrainResult.improved ? "✓ Model improved" : "⚠ Slight regression"}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: "24px 20px", textAlign: "center", color: "var(--text-muted)", fontSize: 12 }}>
+                      Submit project actuals to retrain the XGBoost model. The current prediction will be used as the post-mortem actual.
+                      Old vs new accuracy will be compared and models hot-swapped in memory.
                     </div>
                   )}
                 </div>
