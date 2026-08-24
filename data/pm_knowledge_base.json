@@ -1,0 +1,82 @@
+[
+  {
+    "id": "pmbok-evm-001",
+    "category": "Cost Control",
+    "title": "Earned Value Management (EVM) for Cost Variance Detection",
+    "source": "PMBOK 7th Edition, Section 2.7 — Performance Measurement",
+    "content": "EVM integrates scope, schedule, and cost baselines to assess project performance. Key metrics: CPI (Cost Performance Index) below 0.9 signals a cost overrun trend requiring immediate corrective action. SPI (Schedule Performance Index) below 0.85 indicates schedule slippage. EAC (Estimate at Completion) should be recalculated monthly. Projects with employee cost ratios exceeding 57% of budget are at elevated risk of CPI degradation.",
+    "keywords": ["cost", "overrun", "budget", "evm", "cpi", "spi", "variance", "employee cost ratio", "expense"]
+  },
+  {
+    "id": "pmbok-evm-002",
+    "category": "Cost Control",
+    "title": "Reserve Analysis and Contingency Budgeting",
+    "source": "PMBOK 7th Edition, Section 6.5 — Cost Estimates",
+    "content": "Management reserves of 5-10% of total budget should be maintained for unknown risks. Contingency reserves (specific to identified risks) typically range from 8-15% depending on project complexity. Projects with predicted cost overruns exceeding 15% should trigger a formal re-baselining review. Fixed-bid contracts require higher contingency reserves (12-18%) compared to time-and-material contracts (5-8%).",
+    "keywords": ["reserve", "contingency", "budget", "cost", "overrun", "fixed bid", "risk buffer"]
+  },
+  {
+    "id": "pmbok-scope-001",
+    "category": "Scope Management",
+    "title": "Integrated Change Control Process",
+    "source": "PMBOK 7th Edition, Section 4.6 — Perform Integrated Change Control",
+    "content": "All scope change requests must go through a formal Change Control Board (CCB). Each scope change should be assessed for schedule impact (typically 2-5 days per change), cost impact (3-8% budget increase per major scope change), and resource reallocation needs. Projects experiencing more than 3 scope changes in the first 50% of timeline are at significantly elevated risk of delivery failure. Scope freeze points should be established at 60% project completion.",
+    "keywords": ["scope", "change", "scope creep", "change control", "ccb", "scope change count", "freeze"]
+  },
+  {
+    "id": "pmbok-scope-002",
+    "category": "Scope Management",
+    "title": "Requirements Traceability and Scope Baseline Protection",
+    "source": "PMBOK 7th Edition, Section 5.2 — Collect Requirements",
+    "content": "A Requirements Traceability Matrix (RTM) links every requirement to its business objective, preventing gold-plating and unauthorized scope expansion. Projects should maintain a formal scope baseline document signed off by all stakeholders. Scope change impact analysis should quantify: additional person-hours, testing effort multiplier (typically 1.5x for each scope addition), and integration regression risk.",
+    "keywords": ["scope", "requirements", "traceability", "baseline", "gold plating", "scope creep"]
+  },
+  {
+    "id": "pmbok-resource-001",
+    "category": "Resource Management",
+    "title": "Team Staffing Optimization and Seniority Mix Guidelines",
+    "source": "PMBOK 7th Edition, Section 9.3 — Acquire Resources",
+    "content": "Optimal IT project team composition follows a 20-30% junior, 40-50% mid-level, 20-30% senior ratio. Teams with junior ratios exceeding 45% show 25-35% higher defect rates and require additional mentoring overhead. Each senior developer effectively mentors 2-3 junior developers. Adding team members mid-project follows Brooks's Law: new members reduce short-term productivity for 4-8 weeks due to onboarding overhead. Team sizes above 12 require sub-team decomposition.",
+    "keywords": ["team", "team size", "seniority", "junior", "senior", "mid", "staffing", "resource", "brooks law"]
+  },
+  {
+    "id": "pmbok-resource-002",
+    "category": "Resource Management",
+    "title": "Attrition Recovery and Knowledge Retention Protocols",
+    "source": "PMBOK 7th Edition, Section 9.5 — Manage Team + Industry Research",
+    "content": "Each attrition event costs 25-30% of the departing employee's annual salary in lateral hire and onboarding expenses. Knowledge transfer protocols should be initiated within 2 weeks of resignation notice. Critical path activities should never have single-person dependencies (bus factor >= 2). Projects with 3+ attrition events in a 6-month window should trigger a formal retention review with HR. Pair programming and documentation sprints reduce knowledge loss by 40-60%.",
+    "keywords": ["attrition", "attrition events", "turnover", "retention", "knowledge transfer", "lateral hire", "bus factor"]
+  },
+  {
+    "id": "pmbok-contract-001",
+    "category": "Contract Risk",
+    "title": "Fixed-Bid vs Outcome-Based vs T&M Contract Risk Allocation",
+    "source": "PMBOK 7th Edition, Section 12.2 — Conduct Procurements",
+    "content": "Fixed-Bid (Firm Fixed Price): Vendor absorbs all cost overrun risk. Requires precise scope definition upfront. High penalty for scope changes (15-25% premium per change order). Best when requirements are well-defined and stable. Outcome-Based (Fixed Price Incentive): Shared risk model — vendor and client split overruns/savings. Aligns delivery milestones with financial incentives. Reduces adversarial dynamics. Time & Material (T&M): Client absorbs cost variance risk. Suitable for exploratory or R&D projects. Provides maximum flexibility but minimal cost predictability. Requires strong PMO oversight.",
+    "keywords": ["contract", "fixed bid", "outcome based", "time and material", "t&m", "client type", "procurement", "vendor"]
+  },
+  {
+    "id": "pmbok-risk-001",
+    "category": "Risk Management",
+    "title": "Quantitative Risk Analysis and Monte Carlo Simulation",
+    "source": "PMBOK 7th Edition, Section 11.4 — Perform Quantitative Risk Analysis",
+    "content": "Quantitative risk analysis uses Monte Carlo simulation to model probability distributions of project outcomes. Projects classified as 'at_risk' should undergo formal risk reassessment at each phase gate. Risk registers should be updated bi-weekly. Top risk factors (analogous to SHAP importance) should be monitored with Key Risk Indicators (KRIs). Projects with burn rate variance exceeding 12% should implement weekly cost reviews instead of monthly.",
+    "keywords": ["risk", "at risk", "failed", "risk management", "monte carlo", "burn rate", "variance", "kri"]
+  },
+  {
+    "id": "pmbok-schedule-001",
+    "category": "Schedule Management",
+    "title": "Critical Path Method and Schedule Compression",
+    "source": "PMBOK 7th Edition, Section 6.5 — Develop Schedule",
+    "content": "The Critical Path Method (CPM) identifies the longest sequence of dependent activities. Schedule compression techniques: Crashing (adding resources to critical path — increases cost 15-30%) and Fast-Tracking (parallelizing sequential activities — increases risk 20-40%). Projects exceeding planned duration by 15%+ should evaluate fast-tracking only if risk tolerance allows. Duration buffers of 10-15% should be maintained on critical path activities.",
+    "keywords": ["schedule", "duration", "weeks", "critical path", "delay", "crashing", "fast tracking", "timeline"]
+  },
+  {
+    "id": "industry-cost-001",
+    "category": "Industry Benchmarks",
+    "title": "Indian IT Services Cost Benchmarks and Margin Analysis",
+    "source": "The Indian IT Services Sector at a Crossroads (Research Paper)",
+    "content": "Industry-wide employee cost-to-revenue ratio averages 57-60%. Companies with ratios above 62% face margin compression. Employee costs rose 206% while revenue grew only 185% over the past decade. Annual attrition rates average 13-14%. Lateral hire cost premium is 25-30% above internal promotion costs. The shift toward outcome-based pricing raises stakes for cost overrun prediction. Mid-cap IT firms (not TCS/Infosys) are most vulnerable to margin pressure and benefit most from predictive project risk tools.",
+    "keywords": ["employee cost ratio", "margin", "industry", "benchmark", "attrition", "lateral hire", "indian it", "revenue"]
+  }
+]

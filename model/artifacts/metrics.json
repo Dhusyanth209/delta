@@ -1,65 +1,15 @@
 {
   "classifier": {
-    "accuracy": 0.7157894736842105,
-    "train_accuracy": 0.8447368421052631,
-    "generalization_gap": 0.1289473684210526,
-    "cv_accuracy": 0.7552631578947369,
-    "model_type": "XGBClassifier",
-    "best_params": {
-      "max_depth": 2,
-      "n_estimators": 300,
-      "learning_rate": 0.05
-    },
-    "regularization": {
-      "min_child_weight": 10,
-      "subsample": 0.7,
-      "colsample_bytree": 0.7,
-      "reg_alpha": 0.5,
-      "reg_lambda": 5,
-      "gamma": 1
-    },
-    "per_class": {
-      "at_risk": {
-        "precision": 0.6276595744680851,
-        "recall": 0.7763157894736842,
-        "f1_score": 0.6941176470588235,
-        "support": 76
-      },
-      "failed": {
-        "precision": 0.7567567567567568,
-        "recall": 0.6363636363636364,
-        "f1_score": 0.691358024691358,
-        "support": 44
-      },
-      "on_track": {
-        "precision": 0.8305084745762712,
-        "recall": 0.7,
-        "f1_score": 0.7596899224806202,
-        "support": 70
-      }
-    },
-    "test_size": 0.2,
-    "design_note": "Ensemble (XGB+RF+GB) explored in v2.0, deprioritized for SHAP interpretability"
+    "accuracy": 0.7015706806282722,
+    "model_type": "XGBClassifier"
   },
   "regressor": {
-    "mae": 0.04344990195258135,
-    "rmse": 0.0562788723437141,
-    "r2": 0.7871385155579484,
+    "mae": 0.04463619271215903,
+    "r2": 0.7744461541884144,
     "model_type": "XGBRegressor"
   },
-  "rl_bandit": {
-    "n_episodes": 500,
-    "n_actions": 6,
-    "method": "Thompson Sampling Contextual Bandit",
-    "reward_source": "counterfactual simulation through classifier (not real outcomes)"
-  },
   "dataset": {
-    "total_records": 950,
-    "features": 29,
-    "engineered_features": 8,
-    "train_size": 760,
-    "test_size": 190
-  },
-  "version": "2.1",
-  "timestamp": "2026-07-16 11:37:31"
+    "total_records": 951,
+    "features": 21
+  }
 }
