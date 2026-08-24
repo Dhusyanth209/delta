@@ -41,6 +41,9 @@ from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, mean_absolute_error, r2_score
+import xgboost as xgb
 
 # ─── Path Setup ──────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -2075,6 +2078,155 @@ async def heatmap_data(projects: list[dict], top_n: int = 8):
         "top_n": top_n,
         "total_features_available": len(sorted_features),
     }
+
+
+
+# ─── Model Retraining Pipeline ───────────────────────────────────────────────
+
+class RetrainRecord(BaseModel):
+    features: ProjectFeatures = Field(..., description="Project feature inputs")
+    actual_outcome: str = Field(..., description="Actual outcome: on_track, at_risk, or failed")
+    actual_cost_usd: float = Field(..., description="Actual final cost in USD")
+
+
+class RetrainRequest(BaseModel):
+    records: list[RetrainRecord] = Field(..., min_length=1, description="Post-mortem project actuals")
+
+
+class RetrainResponse(BaseModel):
+    status: str
+    records_added: int
+    old_metrics: dict
+    new_metrics: dict
+    delta: dict
+    improved: bool
+    new_total_records: int
+
+
+@app.post("/model/retrain", response_model=RetrainResponse)
+async def retrain_model(req: RetrainRequest):
+    """Retrain models with post-mortem actuals and compare old vs new accuracy."""
+    import shap as shap_lib
+
+    artifacts_dir = Path(__file__).parent.parent / "model" / "artifacts"
+    data_path = Path(__file__).parent.parent / "data" / "synthetic_projects.csv"
+
+    # 1. Load old metrics
+    old_metrics_data = {}
+    metrics_path = artifacts_dir / "metrics.json"
+    if metrics_path.exists():
+        with open(metrics_path) as f:
+            old_metrics_data = json.load(f)
+
+    old_accuracy = old_metrics_data.get("classifier", {}).get("accuracy", 0)
+    old_r2 = old_metrics_data.get("regressor", {}).get("r2", 0)
+    old_mae = old_metrics_data.get("regressor", {}).get("mae", 0)
+
+    # 2. Load existing CSV and append new records
+    df = pd.read_csv(data_path)
+
+    new_rows = []
+    for rec in req.records:
+        fd = rec.features.model_dump()
+        fd["outcome_label"] = rec.actual_outcome
+        fd["budget_actual_usd"] = rec.actual_cost_usd
+        new_rows.append(fd)
+
+    df_new = pd.DataFrame(new_rows)
+    # Align columns — fill missing with defaults
+    for col in df.columns:
+        if col not in df_new.columns:
+            df_new[col] = 0
+    df_combined = pd.concat([df, df_new[df.columns]], ignore_index=True)
+    df_combined.to_csv(data_path, index=False)
+
+    # 3. Retrain models
+    feature_cols = [
+        "industry_type", "team_size", "seniority_mix_junior", "seniority_mix_mid",
+        "seniority_mix_senior", "budget_planned_usd", "duration_planned_weeks",
+        "scope_change_count", "client_type", "employee_cost_ratio",
+        "attrition_events", "weekly_burn_rate_variance",
+    ]
+    categorical = ["industry_type", "client_type"]
+
+    X_encoded = pd.get_dummies(df_combined[feature_cols], columns=categorical)
+    le_new = LabelEncoder()
+    y_class = le_new.fit_transform(df_combined["outcome_label"])
+    y_overrun = df_combined["budget_actual_usd"] / df_combined["budget_planned_usd"]
+
+    from sklearn.model_selection import train_test_split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_encoded, y_class, test_size=0.2, random_state=42, stratify=y_class
+    )
+    _, _, y_train_reg, y_test_reg = train_test_split(
+        X_encoded, y_overrun, test_size=0.2, random_state=42, stratify=y_class
+    )
+
+    # Train classifier
+    new_clf = xgb.XGBClassifier(
+        n_estimators=200, max_depth=6, learning_rate=0.1,
+        eval_metric="mlogloss", random_state=42, use_label_encoder=False, n_jobs=-1,
+    )
+    new_clf.fit(X_train, y_train, eval_set=[(X_test, y_test)], verbose=False)
+    y_pred = new_clf.predict(X_test)
+    new_accuracy = float(accuracy_score(y_test, y_pred))
+
+    # Train regressor
+    new_reg = xgb.XGBRegressor(
+        n_estimators=150, max_depth=5, learning_rate=0.1, random_state=42, n_jobs=-1,
+    )
+    new_reg.fit(X_train, y_train_reg, eval_set=[(X_test, y_test_reg)], verbose=False)
+    y_pred_reg = new_reg.predict(X_test)
+    new_mae = float(mean_absolute_error(y_test_reg, y_pred_reg))
+    new_r2 = float(r2_score(y_test_reg, y_pred_reg))
+
+    feature_names = list(X_encoded.columns)
+
+    # 4. Save new artifacts
+    joblib.dump(new_clf, artifacts_dir / "xgb_classifier.joblib")
+    joblib.dump(new_reg, artifacts_dir / "cost_regressor.joblib")
+    joblib.dump(le_new, artifacts_dir / "label_encoder.joblib")
+    joblib.dump(feature_names, artifacts_dir / "feature_columns.joblib")
+
+    # Update metrics JSON
+    new_metrics = {
+        "classifier": {"accuracy": new_accuracy, "model_type": "XGBClassifier"},
+        "regressor": {"mae": new_mae, "r2": new_r2, "model_type": "XGBRegressor"},
+        "dataset": {"total_records": len(df_combined), "features": len(feature_names)},
+    }
+    with open(metrics_path, "w") as f:
+        json.dump(new_metrics, f, indent=2)
+
+    # 5. Hot-swap models in memory
+    global classifier, regressor, label_encoder, feature_columns, shap_explainer
+    classifier = new_clf
+    regressor = new_reg
+    label_encoder = le_new
+    feature_columns = feature_names
+    try:
+        shap_explainer = shap_lib.TreeExplainer(new_clf)
+    except Exception:
+        pass
+
+    # Save new test data
+    test_data = pd.DataFrame(X_test, columns=feature_names)
+    test_data.to_csv(artifacts_dir / "test_set_with_predictions.csv", index=False)
+
+    improved = new_accuracy >= old_accuracy
+
+    return RetrainResponse(
+        status="success" if improved else "warning_regression",
+        records_added=len(req.records),
+        old_metrics={"accuracy": old_accuracy, "r2": old_r2, "mae": old_mae},
+        new_metrics={"accuracy": new_accuracy, "r2": new_r2, "mae": new_mae},
+        delta={
+            "accuracy_diff": round(new_accuracy - old_accuracy, 4),
+            "r2_diff": round(new_r2 - old_r2, 4),
+            "mae_diff": round(new_mae - old_mae, 4),
+        },
+        improved=improved,
+        new_total_records=len(df_combined),
+    )
 
 
 if __name__ == "__main__":
