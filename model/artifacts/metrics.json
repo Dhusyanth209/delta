@@ -1,15 +1,15 @@
 {
   "classifier": {
-    "accuracy": 0.7015706806282722,
+    "accuracy": 0.7068062827225131,
     "model_type": "XGBClassifier"
   },
   "regressor": {
-    "mae": 0.04463619271215903,
-    "r2": 0.7744461541884144,
+    "mae": 0.04526278424604065,
+    "r2": 0.7725885358104536,
     "model_type": "XGBRegressor"
   },
   "dataset": {
-    "total_records": 951,
-    "features": 21
+    "total_records": 955,
+    "features": 23
   }
 }

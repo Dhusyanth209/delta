@@ -2208,8 +2208,13 @@ async def retrain_model(req: RetrainRequest):
     except Exception:
         pass
 
-    # Save new test data
-    test_data = pd.DataFrame(X_test, columns=feature_names)
+    # Save new test data with all columns needed by /projects/sample
+    test_data = pd.DataFrame(X_test.values, columns=feature_names)
+    test_data["outcome_actual"] = le_new.inverse_transform(y_test)
+    test_data["outcome_predicted"] = le_new.inverse_transform(y_pred)
+    test_data["overrun_ratio_actual"] = y_test_reg.values if hasattr(y_test_reg, 'values') else y_test_reg
+    y_pred_proba = new_clf.predict_proba(X_test)
+    test_data["prediction_confidence"] = np.max(y_pred_proba, axis=1)
     test_data.to_csv(artifacts_dir / "test_set_with_predictions.csv", index=False)
 
     improved = new_accuracy >= old_accuracy
